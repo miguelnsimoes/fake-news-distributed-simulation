@@ -218,3 +218,37 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Windows e outros arquivos do sistema operacional
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# Configurações locais de editores e ferramentas
+.vscode/
+.idea/
+.vs/
+.python-version
+.codex/
+.agents/
+.aws/
+
+# Variações locais de ambientes e credenciais
+.env.*
+!.env.example
+.venv/
+.venv-*/
+venv-*/
+
+# Arquivos temporários e cópias de segurança
+*.tmp
+*.temp
+*.bak
+*.old
+*.swp
+*.swo
+*~
