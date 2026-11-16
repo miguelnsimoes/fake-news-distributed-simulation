@@ -1,0 +1,86 @@
+Python 3.14.7 (C:\Users\Pedro\AppData\Local\Python\pythoncore-3.14-64\python.exe) | GIL ativo | 16 CPUs lógicas | Windows-11-10.0.26200-SP0
+
+Economia de energia do Windows (EcoQoS): desligada
+
+Grade 1000x1000 | até 30 gerações | 2% espalhadores | limiar 2 | 5 repetição(ões)
+
+Professor (sequencial original): 30.690 s, 30 gerações
+
+backend    kernel     divisão   workers gerações(s)  total(s)  speedup eficiência vs prof.  desbal. sinc.(s)  ok
+
+----------------------------------------------------------------------------------------------------------------
+
+threads    otimizado  estatica        1       2.811     2.812     1.00       100%    10.92     1.00    0.001 sim
+
+threads    otimizado  estatica        2       2.819     2.819     1.00        50%    10.89     1.10    0.205 sim
+
+threads    otimizado  estatica        4       2.812     2.813     1.00        25%    10.91     1.48    0.637 sim
+
+threads    otimizado  estatica        6       2.873     2.874     0.98        16%    10.68     2.27    1.106 sim
+
+threads    otimizado  estatica        8       2.866     2.867     0.98        12%    10.71     2.51    1.722 sim
+
+threads    otimizado  estatica       10       2.820     2.821     1.00        10%    10.88     2.52    1.961 sim
+
+threads    otimizado  estatica       12       2.816     2.821     1.00         8%    10.90     2.02    2.279 sim
+
+threads    otimizado  estatica       16       2.826     2.829     0.99         6%    10.86     1.38    2.573 sim
+
+threads    otimizado  dinamica        1       2.808     2.809     1.00       100%    10.93     1.00    0.001 sim
+
+threads    otimizado  dinamica        2       2.816     2.816     1.00        50%    10.90     1.08    0.063 sim
+
+threads    otimizado  dinamica        4       2.835     2.836     0.99        25%    10.83     1.50    0.065 sim
+
+threads    otimizado  dinamica        6       2.829     2.831     0.99        17%    10.85     2.04    0.057 sim
+
+threads    otimizado  dinamica        8       2.821     2.822     1.00        12%    10.88     2.61    0.051 sim
+
+threads    otimizado  dinamica       10       2.840     2.841     0.99        10%    10.81     3.20    0.040 sim
+
+threads    otimizado  dinamica       12       2.827     2.828     0.99         8%    10.86     3.89    0.031 sim
+
+threads    otimizado  dinamica       16       2.860     2.867     0.98         6%    10.73     5.20    0.024 sim
+
+processos  otimizado  estatica        1       2.845     2.946     1.00       100%    10.79     1.00    0.004 sim
+
+processos  otimizado  estatica        2       1.450     1.560     1.96        98%    21.17     1.01    0.004 sim
+
+processos  otimizado  estatica        4       0.734     0.848     3.87        97%    41.79     1.01    0.004 sim
+
+processos  otimizado  estatica        6       0.501     0.634     5.68        95%    61.25     1.04    0.004 sim
+
+processos  otimizado  estatica        8       0.533     0.679     5.34        67%    57.59     1.28    0.008 sim
+
+processos  otimizado  estatica       10       0.463     0.652     6.14        61%    66.25     1.23    0.008 sim
+
+processos  otimizado  estatica       12       0.412     0.601     6.91        58%    74.53     1.18    0.007 sim
+
+processos  otimizado  estatica       16       0.397     0.627     7.16        45%    77.22     1.18    0.044 sim
+
+processos  otimizado  dinamica        1       2.825     2.941     1.00       100%    10.86     1.00    0.003 sim
+
+processos  otimizado  dinamica        2       1.434     1.540     1.97        98%    21.39     1.01    0.004 sim
+
+processos  otimizado  dinamica        4       0.741     0.852     3.81        95%    41.44     1.02    0.004 sim
+
+processos  otimizado  dinamica        6       0.523     0.655     5.40        90%    58.68     1.07    0.004 sim
+
+processos  otimizado  dinamica        8       0.442     0.608     6.39        80%    69.40     1.05    0.006 sim
+
+processos  otimizado  dinamica       10       0.398     0.574     7.09        71%    77.01     1.05    0.005 sim
+
+processos  otimizado  dinamica       12       0.368     0.551     7.67        64%    83.34     1.05    0.006 sim
+
+processos  otimizado  dinamica       16       0.336     0.567     8.41        53%    91.34     1.06    0.006 sim
+
+speedup = T(1 worker) / T(N); eficiência = speedup / N; vs prof. = T(professor) / T(N);
+
+desbal. = cálculo do worker mais lento / média, geração a geração (1,00 = equilibrado);
+
+sinc. = tempo das gerações - soma do worker mais lento de cada geração (barreiras e coordenação;
+
+com GIL inclui a espera pelo GIL).
+
+161 execuções gravadas em C:\Users\Pedro\AppData\Local\Temp\claude\fcdd05c034f6fbb1\c5d8b1f7-64ec-4aee-8643-d81c58a98d13\scratchpad\final\A_gil.csv
+

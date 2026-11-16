@@ -23,7 +23,7 @@ Na implementação fornecida, um ignorante se torna espalhador quando possui pel
 | Implementação | Situação | Descrição |
 | --- | --- | --- |
 | Sequencial | Disponível | Código original do professor, preservado integralmente em `src/sequential/fake_news.py`. |
-| Paralela | Planejada | Divisão do processamento usando threads ou `multiprocessing`; a abordagem será definida na etapa de implementação. |
+| Paralela | Disponível | Blocos de linhas divididos entre `threading` ou `multiprocessing`, com buffer duplo e uma barreira por geração. Detalhes em [`docs/versao-paralela.md`](docs/versao-paralela.md). |
 | Distribuída | Planejada | Divisão do processamento entre processos com comunicação por sockets. |
 
 ## Tecnologias
@@ -41,7 +41,9 @@ fake-news-distributed-simulation/
 │   ├── sequential/
 │   │   └── fake_news.py
 │   ├── parallel/
-│   │   └── .gitkeep
+│   │   ├── fake_news_paralelo.py
+│   │   ├── regras.py
+│   │   └── varredura.py
 │   ├── distributed/
 │   │   └── .gitkeep
 │   └── common/
@@ -74,6 +76,19 @@ Em ambientes onde o interpretador é chamado de `python3`, substitua `python` po
 O script executa com os parâmetros originais definidos no bloco `if __name__ == "__main__"`: matriz de 100 × 100, limite de 50 gerações, percentual inicial de espalhadores de 5%, limiar de convencimento de três vizinhos e exibição da grade desativada. A simulação pode terminar antes do limite de gerações caso não existam mais espalhadores. As estatísticas por geração, os totais finais e o tempo de execução são exibidos no terminal.
 
 Não é necessário instalar dependências ou criar um ambiente virtual para executar esta versão.
+
+## Executar a versão paralela
+
+Também só usa a biblioteca padrão. Na raiz do repositório:
+
+```sh
+python src/parallel/fake_news_paralelo.py --workers 4 --backend threads
+python src/parallel/fake_news_paralelo.py --workers 8 --backend processos --linhas 1000 --colunas 1000 --limiar 2
+python src/parallel/varredura.py --workers 1 2 4 8 --backend threads processos --sequencial
+python -m unittest discover -s tests -v
+```
+
+Sem opções, `fake_news_paralelo.py` usa os mesmos parâmetros do código do professor. `varredura.py` mede speedup e eficiência para cada número de workers e confere se o resultado é idêntico ao sequencial. As opções e o desenho da solução estão em [`docs/versao-paralela.md`](docs/versao-paralela.md).
 
 ## Integrantes
 
