@@ -11,8 +11,8 @@ src/
   common/core.py                  # base comum: regras, grade, contagem, hash, simular sequencial
   sequential/fake_news.py         # ORIGINAL do professor (não alterar)
   sequential/run_sequential.py    # CLI da versão sequencial (usa common/core.py)
-  parallel/                       # (Pedro)  expõe simular(config)
-  distributed/                    # (Miguel) expõe simular(config)
+  parallel/paralela.py            # (Pedro)  expõe simular(config)
+  distributed/distribuida.py      # (Miguel) expõe simular(config)
 tests/test_equivalence.py         # testes de equivalência
 ```
 
@@ -48,9 +48,15 @@ Cada versão expõe uma função:
 def simular(config: Config) -> Resultado
 ```
 
-Os testes procuram por padrão `src/parallel/parallel.py` e `src/distributed/distributed.py`
+Os testes procuram por padrão `src/parallel/paralela.py` e `src/distributed/distribuida.py`
 (nomes configuráveis em `MODULO_PARALELO` / `MODULO_DISTRIBUIDO`, no topo de
-`tests/test_equivalence.py`). Se o módulo não existir, o teste dessa versão é pulado.
+`tests/test_equivalence.py`). Se o módulo não importar, o teste dessa versão é pulado e
+a mensagem do skip mostra o motivo.
+
+**Não dê ao arquivo o mesmo nome da pasta** (`parallel/parallel.py`, `distributed/distributed.py`).
+Os scripts de cada versão põem a própria pasta no `sys.path` para os imports locais; com isso,
+`import parallel` passa a achar o arquivo `parallel.py` em vez da pasta, e `parallel.parallel`
+falha. Na suíte completa o teste é pulado em silêncio, embora rodando sozinho funcione.
 
 - `Config`: `linhas, colunas, geracoes, percentual_espalhadores, limiar_convencimento, semente, num_threads, num_processos`
 - `Resultado`: `versao, config, historico, geracoes_executadas, tempo_s, grade_final, hash_grade`

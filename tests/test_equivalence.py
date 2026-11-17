@@ -32,8 +32,8 @@ from sequential import fake_news as ref    # original do professor (gabarito)
 
 # Módulos que o Pedro e o Miguel devem criar, cada um expondo simular(config).
 # Se escolherem outros nomes, é só ajustar aqui.
-MODULO_PARALELO = "parallel.parallel"
-MODULO_DISTRIBUIDO = "distributed.distributed"
+MODULO_PARALELO = "parallel.paralela"
+MODULO_DISTRIBUIDO = "distributed.distribuida"
 
 
 def simular_referencia(linhas, colunas, geracoes, percentual, limiar, semente=42):
@@ -209,8 +209,9 @@ class _EquivalenciaVersao:
     def setUpClass(cls):
         try:
             cls.mod = importlib.import_module(cls.modulo)
-        except ImportError:
-            raise unittest.SkipTest(f"módulo '{cls.modulo}' ainda não existe")
+        except ImportError as erro:
+            # Mostra o motivo: um nome que colide com a pasta também cai aqui.
+            raise unittest.SkipTest(f"módulo '{cls.modulo}' não importou: {erro}")
         if not hasattr(cls.mod, "simular"):
             raise unittest.SkipTest(f"'{cls.modulo}' não expõe simular(config)")
 
