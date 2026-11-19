@@ -1,65 +1,49 @@
-"""
-Núcleo compartilhado da simulação de propagação de Fake News.
+"""Núcleo comum às versões sequencial, paralela e distribuída.
 
-Este módulo (src/common/core.py) é a BASE COMUM das três versões (sequencial, paralela e distribuída).
-Todas devem importar daqui as constantes, a criação da grade, a regra de transição
-e as funções de contagem, para garantir que o comportamento lógico seja idêntico.
-
-Estados:
-    0 = IGNORANTE  : ainda não recebeu/acredita na informação
-    1 = ESPALHADOR : acredita e compartilha a informação
-    2 = INATIVO    : recebeu a informação, mas não compartilha mais
-
-Regras (vizinhança de Moore, até 8 vizinhos, geração discreta):
-    - IGNORANTE  -> ESPALHADOR se tiver >= limiar vizinhos ESPALHADORES
-    - ESPALHADOR -> INATIVO
-    - INATIVO    -> INATIVO
-
-CONTRATO DE INTERFACE (todas as versões devem seguir):
-    simular(config: Config) -> Resultado
-
-    A função `calcular_faixa` é a peça reutilizável pelas versões paralelas:
-    ela calcula apenas um intervalo de linhas, lendo de uma grade (que pode ser
-    uma "fatia" com linhas-fantasma/halo), sem nunca escrever na grade de leitura.
+Contrato de todas as versões: ``simular(config: Config) -> Resultado``.
 """
 
 import hashlib
 import random
 import time
 from dataclasses import dataclass, field, asdict
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
-IGNORANTE = 0
-ESPALHADOR = 1
-INATIVO = 2
+from .estados import ESPALHADOR, IGNORANTE, INATIVO
+from .kernels import KERNEL_PADRAO, KERNELS, Kernel, obter_kernel
+
+__all__ = [
+    "IGNORANTE", "ESPALHADOR", "INATIVO", "KERNELS", "KERNEL_PADRAO", "Grade",
+    "Config", "Resultado", "criar_grade", "calcular_faixa", "proxima_geracao",
+    "contar_estados", "somar_contagens", "registro_historico", "hash_grade",
+    "dividir_linhas", "simular", "calcular_linhas", "contar_linhas", "evoluir",
+]
+
+# Formato interno: uma linha em bytes (1 byte por pessoa), o mesmo dos kernels.
+Linhas = List[bytes]
 
 Grade = List[List[int]]
 
 
-# ---------------------------------------------------------------------------
-# Configuração e resultado padronizados
-# ---------------------------------------------------------------------------
-
 @dataclass
 class Config:
-    """Parâmetros de entrada, iguais para as três versões."""
     linhas: int = 100
     colunas: int = 100
     geracoes: int = 50
     percentual_espalhadores: float = 0.05
     limiar_convencimento: int = 3
     semente: int = 42
-    # Só usados pelas versões paralela/distribuída (a sequencial ignora):
+    kernel: str = KERNEL_PADRAO
+    # Ignorados pela versão sequencial.
     num_threads: int = 1
     num_processos: int = 1
 
 
 @dataclass
 class Resultado:
-    """Saída padronizada, igual para as três versões."""
     versao: str
     config: Config
-    # um dict por geração: {"geracao", "ignorantes", "espalhadores", "inativos"}
+    # Um registro_historico por geração.
     historico: List[Dict[str, int]] = field(default_factory=list)
     geracoes_executadas: int = 0
     tempo_s: float = 0.0
@@ -83,21 +67,10 @@ class Resultado:
         return d
 
 
-# ---------------------------------------------------------------------------
-# Criação da grade
-# ---------------------------------------------------------------------------
-
 def criar_grade(linhas: int, colunas: int,
                 percentual_espalhadores: float = 0.02,
                 semente: int = 42) -> Grade:
-    """
-    Cria a grade inicial. A grade é SEMPRE gerada inteira, no processo
-    coordenador, com a mesma semente; depois cada versão a distribui.
-
-    Usa um gerador local (random.Random) em vez do global, mas a sequência de
-    números é idêntica à do código original (random.seed + random.randint),
-    então a grade inicial é exatamente a mesma do código do professor.
-    """
+    """Mesma grade do código original, mas com gerador local em vez do global."""
     rng = random.Random(semente)
     grade = [[IGNORANTE] * colunas for _ in range(linhas)]
 
@@ -110,77 +83,49 @@ def criar_grade(linhas: int, colunas: int,
     return grade
 
 
-# ---------------------------------------------------------------------------
-# Regra de transição
-# ---------------------------------------------------------------------------
-
-def contar_vizinhos_espalhadores(grade: Grade, i: int, j: int) -> int:
-    """
-    Conta vizinhos ESPALHADORES (Moore, até 8) da célula (i, j).
-    Os limites são os da `grade` recebida: células fora dela não existem.
-    Isso permite usar a mesma função em uma fatia com halo (versão distribuída).
-    """
-    linhas = len(grade)
-    colunas = len(grade[0])
-    total = 0
-
-    for di in (-1, 0, 1):
-        ni = i + di
-        if ni < 0 or ni >= linhas:
-            continue
-        linha_viz = grade[ni]
-        for dj in (-1, 0, 1):
-            if di == 0 and dj == 0:
-                continue
-            nj = j + dj
-            if 0 <= nj < colunas and linha_viz[nj] == ESPALHADOR:
-                total += 1
-
-    return total
-
-
 def calcular_faixa(grade: Grade, linha_ini: int, linha_fim: int,
-                   limiar_convencimento: int) -> Grade:
-    """
-    Calcula a próxima geração APENAS das linhas [linha_ini, linha_fim)
-    e devolve essas linhas já atualizadas (lista de novas linhas).
+                   limiar_convencimento: int,
+                   kernel: Union[str, Kernel] = KERNEL_PADRAO) -> Grade:
+    """Próxima geração das linhas [linha_ini, linha_fim), sem alterar ``grade``.
 
-    Propriedades importantes para paralelismo:
-      - LÊ de `grade` e NUNCA escreve nela -> sem condição de corrida de leitura.
-      - Devolve linhas NOVAS -> cada thread/processo escreve só na sua faixa.
-      - Os índices são relativos à `grade` recebida. Na versão distribuída, o
-        worker passa a fatia local (com halo) e calcula só as linhas internas.
+    Linhas fora de ``grade`` são tratadas como borda da matriz, o que permite
+    passar uma fatia com halo.
     """
-    nova_faixa: Grade = []
+    if linha_ini >= linha_fim:
+        return []
+    base = max(0, linha_ini - 1)
+    janela = [bytes(linha) for linha in grade[base:linha_fim + 1]]
+    novas = calcular_linhas(janela, linha_ini - base, linha_fim - base,
+                            limiar_convencimento, kernel)
+    return [list(linha) for linha in novas]
 
+
+def calcular_linhas(linhas: Sequence[bytes], linha_ini: int, linha_fim: int,
+                    limiar_convencimento: int,
+                    kernel: Union[str, Kernel] = KERNEL_PADRAO) -> Linhas:
+    """``calcular_faixa`` no formato interno, sem conversões."""
+    calcular = obter_kernel(kernel)
+    total = len(linhas)
+    novas: Linhas = []
+    if linha_ini >= linha_fim:
+        return novas
+
+    acima = linhas[linha_ini - 1] if linha_ini > 0 else None
+    atual = linhas[linha_ini]
     for i in range(linha_ini, linha_fim):
-        linha_atual = grade[i]
-        nova_linha = []
-        for j, estado in enumerate(linha_atual):
-            if estado == IGNORANTE:
-                if contar_vizinhos_espalhadores(grade, i, j) >= limiar_convencimento:
-                    nova_linha.append(ESPALHADOR)
-                else:
-                    nova_linha.append(IGNORANTE)
-            else:
-                # ESPALHADOR -> INATIVO ; INATIVO -> INATIVO
-                nova_linha.append(INATIVO)
-        nova_faixa.append(nova_linha)
+        abaixo = linhas[i + 1] if i + 1 < total else None
+        novas.append(calcular(acima, atual, abaixo, limiar_convencimento))
+        acima, atual = atual, abaixo
 
-    return nova_faixa
+    return novas
 
 
-def proxima_geracao(grade: Grade, limiar_convencimento: int = 2) -> Grade:
-    """Próxima geração da grade inteira (versão sequencial)."""
-    return calcular_faixa(grade, 0, len(grade), limiar_convencimento)
+def proxima_geracao(grade: Grade, limiar_convencimento: int = 2,
+                    kernel: Union[str, Kernel] = KERNEL_PADRAO) -> Grade:
+    return calcular_faixa(grade, 0, len(grade), limiar_convencimento, kernel)
 
-
-# ---------------------------------------------------------------------------
-# Contagem, hash e utilitários
-# ---------------------------------------------------------------------------
 
 def contar_estados(grade: Grade) -> Dict[int, int]:
-    """Conta células por estado na grade inteira."""
     contagem = {IGNORANTE: 0, ESPALHADOR: 0, INATIVO: 0}
     for linha in grade:
         for celula in linha:
@@ -188,8 +133,16 @@ def contar_estados(grade: Grade) -> Dict[int, int]:
     return contagem
 
 
+def contar_linhas(linhas: Sequence[bytes]) -> Dict[int, int]:
+    """``contar_estados`` no formato interno."""
+    ignorantes = sum(linha.count(IGNORANTE) for linha in linhas)
+    espalhadores = sum(linha.count(ESPALHADOR) for linha in linhas)
+    total = sum(len(linha) for linha in linhas)
+    return {IGNORANTE: ignorantes, ESPALHADOR: espalhadores,
+            INATIVO: total - ignorantes - espalhadores}
+
+
 def somar_contagens(contagens: List[Dict[int, int]]) -> Dict[int, int]:
-    """Soma contagens parciais (ex.: uma por thread/worker) em uma total."""
     total = {IGNORANTE: 0, ESPALHADOR: 0, INATIVO: 0}
     for c in contagens:
         for estado in total:
@@ -198,7 +151,6 @@ def somar_contagens(contagens: List[Dict[int, int]]) -> Dict[int, int]:
 
 
 def registro_historico(geracao: int, contagem: Dict[int, int]) -> Dict[str, int]:
-    """Formato único de cada entrada do histórico (usado por todas as versões)."""
     return {
         "geracao": geracao,
         "ignorantes": contagem[IGNORANTE],
@@ -208,24 +160,16 @@ def registro_historico(geracao: int, contagem: Dict[int, int]) -> Dict[str, int]
 
 
 def hash_grade(grade: Grade) -> str:
-    """
-    Impressão digital da grade. Duas grades iguais => mesmo hash.
-    É o jeito mais barato de provar que as três versões chegaram ao mesmo estado.
-    """
+    """SHA-256 da grade, para comparar o estado final entre versões."""
     h = hashlib.sha256()
     h.update(f"{len(grade)}x{len(grade[0])}".encode())
     for linha in grade:
-        h.update(bytes(linha))  # estados são 0, 1 ou 2: cabem em 1 byte
+        h.update(bytes(linha))
     return h.hexdigest()
 
 
 def dividir_linhas(total_linhas: int, partes: int) -> List[range]:
-    """
-    Divide `total_linhas` em `partes` faixas contíguas e balanceadas
-    (diferença de no máximo 1 linha entre faixas). Retorna uma lista de `range`.
-    Se partes > total_linhas, as faixas excedentes ficam vazias.
-    Pensada para ser usada por threads (Pedro) e workers (Miguel).
-    """
+    """Faixas contíguas cujos tamanhos diferem em no máximo 1 (podem ser vazias)."""
     base, resto = divmod(total_linhas, partes)
     faixas = []
     inicio = 0
@@ -236,51 +180,49 @@ def dividir_linhas(total_linhas: int, partes: int) -> List[range]:
     return faixas
 
 
-# ---------------------------------------------------------------------------
-# Simulação sequencial (referência para as outras versões)
-# ---------------------------------------------------------------------------
-
 def simular(config: Config,
             ao_final_de_geracao: Optional[Callable[[int, Grade, Dict[int, int]], None]] = None
             ) -> Resultado:
-    """
-    Executa a simulação sequencial completa.
-
-    `ao_final_de_geracao(geracao, grade, contagem)` é um gancho opcional
-    (impressão, visualização). O tempo medido inclui a chamada do gancho,
-    então NÃO passe gancho nas medições de benchmark.
-
-    Critério de parada (igual ao original): roda até `geracoes` ou até não
-    restarem espalhadores. O tempo NÃO inclui a criação da grade inicial.
-    """
+    """Simulação sequencial; o gancho entra no tempo medido (não use em benchmarks)."""
     grade = criar_grade(config.linhas, config.colunas,
                         config.percentual_espalhadores, config.semente)
+    grade, historico, tempo = evoluir(grade, config.geracoes, config.limiar_convencimento,
+                                      config.kernel, ao_final_de_geracao)
+    return Resultado(
+        versao="sequencial",
+        config=config,
+        historico=historico,
+        geracoes_executadas=len(historico),
+        tempo_s=tempo,
+        grade_final=grade,
+        hash_grade=hash_grade(grade),
+    )
 
+
+def evoluir(grade: Grade, geracoes: int, limiar_convencimento: int,
+            kernel: Union[str, Kernel] = KERNEL_PADRAO,
+            ao_final_de_geracao: Optional[Callable[[int, Grade, Dict[int, int]], None]] = None
+            ) -> Tuple[Grade, List[Dict[str, int]], float]:
+    """Laço de gerações a partir de uma grade pronta: (grade_final, historico, tempo_s).
+
+    Para como o original: após ``geracoes`` ou na primeira geração sem espalhadores.
+    """
+    calcular = obter_kernel(kernel)
+    linhas: Linhas = [bytes(linha) for linha in grade]
     historico: List[Dict[str, int]] = []
-    executadas = 0
 
     inicio = time.perf_counter()
 
-    for geracao in range(1, config.geracoes + 1):
-        grade = proxima_geracao(grade, config.limiar_convencimento)
-        contagem = contar_estados(grade)
+    for geracao in range(1, geracoes + 1):
+        linhas = calcular_linhas(linhas, 0, len(linhas), limiar_convencimento, calcular)
+        contagem = contar_linhas(linhas)
         historico.append(registro_historico(geracao, contagem))
-        executadas = geracao
 
         if ao_final_de_geracao is not None:
-            ao_final_de_geracao(geracao, grade, contagem)
+            ao_final_de_geracao(geracao, [list(linha) for linha in linhas], contagem)
 
         if contagem[ESPALHADOR] == 0:
             break
 
     tempo = time.perf_counter() - inicio
-
-    return Resultado(
-        versao="sequencial",
-        config=config,
-        historico=historico,
-        geracoes_executadas=executadas,
-        tempo_s=tempo,
-        grade_final=grade,
-        hash_grade=hash_grade(grade),
-    )
+    return [list(linha) for linha in linhas], historico, tempo

@@ -1,29 +1,17 @@
-"""Interface padrão do grupo para a versão paralela: ``simular(config) -> Resultado``.
+"""``simular(config) -> Resultado`` da versão paralela (contrato de common/core.py).
 
-É uma camada fina sobre ``fake_news_paralelo.simular_paralelo``. Recebe o
-mesmo ``Config`` e devolve o mesmo ``Resultado`` de ``src/common/core.py``,
-para que os testes de equivalência (``tests/test_equivalence.py``) e quem for
-comparar as três versões chamem a paralela do mesmo jeito que a sequencial e
-a distribuída.
-
-Workers: ``config.num_threads`` no backend ``threads`` e
-``config.num_processos`` no backend ``processos``.
-
-Tempo: ``Resultado.tempo_s`` é o mesmo escopo do ``simular`` sequencial do
-núcleo, só o laço de gerações (``tempo_geracoes_s``). A criação e o
-encerramento das threads/processos ficam de fora; para o custo completo,
-use ``simular_paralelo`` diretamente e leia ``tempo_total_s``.
+``tempo_s`` mede só o laço de gerações; o custo de criar os workers está em
+``simular_paralelo(...).tempo_total_s``.
 """
 
 from __future__ import annotations
 
 import sys
+from typing import Optional
 from pathlib import Path
 
 _SRC = Path(__file__).resolve().parents[1]
 _PASTA_PARALELA = _SRC / "parallel"
-# Rodando como script ou importado como ``parallel.paralela``, o núcleo
-# (``common``) e os módulos irmãos (``fake_news_paralelo``) precisam estar no path.
 for _pasta in (_SRC, _PASTA_PARALELA):
     if str(_pasta) not in sys.path:
         sys.path.insert(0, str(_pasta))
@@ -40,15 +28,10 @@ from fake_news_paralelo import BACKENDS, simular_paralelo  # noqa: E402
 def simular(
     config: Config,
     backend: str = "threads",
-    kernel: str = "otimizado",
+    kernel: Optional[str] = None,
     divisao: str = "estatica",
 ) -> Resultado:
-    """Executa a simulação paralela com a mesma entrada e saída das outras versões.
-
-    A grade inicial vem de ``core.criar_grade`` com a mesma semente, então o
-    ponto de partida é idêntico ao da sequencial. A parada também é a mesma:
-    ``config.geracoes`` gerações ou a primeira geração sem espalhadores.
-    """
+    """Usa ``config.num_threads`` ou ``config.num_processos`` conforme o backend."""
     if backend not in BACKENDS:
         raise ValueError(f"backend deve ser um de {BACKENDS}, não {backend!r}.")
     workers = config.num_threads if backend == "threads" else config.num_processos
@@ -61,12 +44,10 @@ def simular(
         limiar_convencimento=config.limiar_convencimento,
         workers=workers,
         backend=backend,
-        kernel=kernel,
+        kernel=kernel or config.kernel,
         divisao=divisao,
     )
 
-    # simular_paralelo devolve tuplas (ignorantes, espalhadores, inativos);
-    # o contrato do grupo usa um dict por geração, numerado a partir de 1.
     historico = [
         {"geracao": g, "ignorantes": ign, "espalhadores": esp, "inativos": ina}
         for g, (ign, esp, ina) in enumerate(saida.historico, start=1)

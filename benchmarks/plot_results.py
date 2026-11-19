@@ -80,13 +80,7 @@ def _salvar(figura, caminho):
 
 
 def gerar_graficos(experimento):
-    """Salva três gráficos por cenário; referências ausentes ficam sem pontos.
-
-    Tempo é comparado entre todas as configurações. Cada curva de escalabilidade
-    mantém implementação, backend, kernel e divisão constantes. Valores ausentes
-    interrompem a curva. Se não houver referências, o PNG explica a ausência.
-    A escala de tempo vira logarítmica quando a razão máximo/mínimo supera 100.
-    """
+    """Salva gráficos de tempo, speedup e eficiência por cenário; devolve os caminhos."""
     pasta = Path(experimento)
     cenarios = ler_cenarios(pasta / "summary.csv")
     destino = pasta / "figures"

@@ -1,22 +1,6 @@
-"""
-Testes de equivalência da simulação de Fake News.
+"""Sequencial, paralela e distribuída devem reproduzir o código original.
 
-Objetivo: garantir que sequencial, paralela e distribuída produzem EXATAMENTE
-os mesmos resultados (mesmo histórico por geração e mesma grade final).
-
-O gabarito é o código ORIGINAL do professor, que fica intacto em
-src/sequential/fake_news.py (não há cópia: se alguém alterar o original,
-os testes passam a cobrar a mudança).
-
-Como rodar (a partir da raiz do repositório):
-    python -m unittest discover -s tests -v
-
-Camadas de teste:
-  1. src/common/core.py (refatorado)  == código original do professor
-  2. Blocos de construção usados pelas versões paralelas (faixas e halo)
-  3. Versões paralela e distribuída == sequencial
-     (rodam automaticamente quando os módulos listados em MODULO_PARALELO e
-      MODULO_DISTRIBUIDO existirem e expuserem `simular(config)`; senão são puladas)
+Gabarito: src/sequential/fake_news.py, importado diretamente (sem cópia).
 """
 
 import importlib
@@ -30,17 +14,13 @@ sys.path.insert(0, os.path.join(RAIZ, "src"))
 from common import core as nucleo          # núcleo refatorado
 from sequential import fake_news as ref    # original do professor (gabarito)
 
-# Módulos que o Pedro e o Miguel devem criar, cada um expondo simular(config).
-# Se escolherem outros nomes, é só ajustar aqui.
+# Módulos que expõem simular(config).
 MODULO_PARALELO = "parallel.paralela"
 MODULO_DISTRIBUIDO = "distributed.distribuida"
 
 
 def simular_referencia(linhas, colunas, geracoes, percentual, limiar, semente=42):
-    """
-    Reproduz o laço de executar_simulacao() do original usando as funções do
-    próprio original. Devolve (historico_de_tuplas, grade_final, geracoes_executadas).
-    """
+    """Laço de executar_simulacao() do original: (historico, grade_final, executadas)."""
     grade = ref.criar_grade(linhas, colunas, percentual, semente)
     historico = []
     executadas = 0
@@ -162,10 +142,7 @@ class TestBlocosParaParalelismo(unittest.TestCase):
                 self.assertEqual(nova, esperado)
 
     def test_fatia_com_halo_igual_geracao_completa(self):
-        """
-        Simula o que um worker distribuído faz: recebe suas linhas + 1 linha
-        de halo em cada lado (quando existir), calcula só as linhas internas.
-        """
+        """Como o worker distribuído: faixa + 1 linha de halo de cada lado."""
         g0 = nucleo.criar_grade(41, 33, 0.10, 42)
         esperado = nucleo.proxima_geracao(g0, 3)
         for workers in (1, 2, 3, 4, 6, 10):
@@ -199,6 +176,34 @@ class TestBlocosParaParalelismo(unittest.TestCase):
         self.assertNotEqual(nucleo.hash_grade(a), nucleo.hash_grade(b))
 
 
+class TestKernels(unittest.TestCase):
+    """Os kernels de common/kernels.py, usados por todas as versões, == professor."""
+
+    def test_todos_os_kernels_iguais_ao_original(self):
+        for nome in nucleo.KERNELS:
+            for c in CENARIOS:
+                l, co, _, p, t = c
+                g0 = ref.criar_grade(l, co, p, 42)
+                for _ in range(3):  # algumas gerações, para misturar os três estados
+                    with self.subTest(kernel=nome, cenario=c):
+                        esperado = ref.proxima_geracao(g0, t)
+                        self.assertEqual(nucleo.proxima_geracao(g0, t, nome), esperado)
+                    g0 = esperado
+
+    def test_simular_com_kernel_otimizado(self):
+        for c in CENARIOS:
+            with self.subTest(cenario=c):
+                historico, grade, executadas = simular_referencia(*c)
+                obtido = nucleo.simular(config_de(c, kernel="otimizado"))
+                self.assertEqual(historico_como_tuplas(obtido.historico), historico)
+                self.assertEqual(obtido.grade_final, grade)
+                self.assertEqual(obtido.geracoes_executadas, executadas)
+
+    def test_kernel_desconhecido(self):
+        with self.assertRaises(ValueError):
+            nucleo.proxima_geracao([[0]], 1, "gpu")
+
+
 class _EquivalenciaVersao:
     """Base: compara uma versão (módulo com simular(config)) com a sequencial."""
     modulo = None
@@ -210,7 +215,6 @@ class _EquivalenciaVersao:
         try:
             cls.mod = importlib.import_module(cls.modulo)
         except ImportError as erro:
-            # Mostra o motivo: um nome que colide com a pasta também cai aqui.
             raise unittest.SkipTest(f"módulo '{cls.modulo}' não importou: {erro}")
         if not hasattr(cls.mod, "simular"):
             raise unittest.SkipTest(f"'{cls.modulo}' não expõe simular(config)")
@@ -226,6 +230,16 @@ class _EquivalenciaVersao:
                     self.assertEqual(obtido.geracoes_executadas, esperado.geracoes_executadas)
                     self.assertEqual(obtido.hash_grade, esperado.hash_grade)
                     self.assertEqual(obtido.grade_final, esperado.grade_final)
+
+    def test_kernel_otimizado_equivale_a_sequencial(self):
+        """Com o mesmo kernel nas duas pontas, o resultado continua idêntico."""
+        for c in CENARIOS[:4]:
+            with self.subTest(cenario=c):
+                cfg = config_de(c, kernel="otimizado", **{self.campo_paralelismo: 3})
+                esperado = nucleo.simular(cfg)
+                obtido = self.mod.simular(cfg)
+                self.assertEqual(obtido.historico, esperado.historico)
+                self.assertEqual(obtido.hash_grade, esperado.hash_grade)
 
     def test_mais_workers_que_linhas(self):
         cfg = config_de((3, 20, 10, 0.2, 2), **{self.campo_paralelismo: 8})

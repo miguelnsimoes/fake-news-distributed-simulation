@@ -26,8 +26,26 @@ CAMPOS = list(CENARIO) + ["implementacao"] + list(CONFIGURACAO) + [
     "repeticoes_validas", "repeticoes_invalidas", "mediana_tempo_externo_s",
     "media_tempo_externo_s", "desvio_padrao_tempo_externo_s",
     "minimo_tempo_externo_s", "maximo_tempo_externo_s",
-    "ganho_vs_sequencial", "speedup_escalabilidade", "eficiencia_escalabilidade",
+    "ganho_vs_sequencial", "speedup_vs_sequencial", "eficiencia_vs_sequencial",
+    "speedup_escalabilidade", "eficiencia_escalabilidade", "mediana_overhead_s",
 ]
+
+
+def implementacao(backend):
+    """Versão do enunciado a que cada backend pertence."""
+    if backend == "sequencial":
+        return "sequencial"
+    if backend == "distribuida":
+        return "distribuida"
+    return "paralela"
+
+
+def _numero(valor):
+    try:
+        numero = float(valor)
+    except (ValueError, TypeError):
+        return None
+    return numero if math.isfinite(numero) and numero >= 0 else None
 
 
 def _tempo_valido(registro):
@@ -43,13 +61,12 @@ def _tempo_valido(registro):
 
 
 def resumir(registros):
-    """Retorna uma linha por configuração, inclusive quando toda ela é inválida.
+    """Uma linha por configuração, considerando só medições válidas.
 
-    O CSV atual não tem 'implementacao': ela é derivada de backend
-    (sequencial ou paralela). Cenários incluem identidade do experimento e
-    todos os parâmetros físicos, impedindo referências entre cargas distintas.
-    Aquecimentos são ignorados. Desvio-padrão amostral (n-1) fica ausente com
-    menos de duas observações. Métricas sem referência válida ficam vazias.
+    Referências:
+      ganho_vs_sequencial     código original (kernel "professor"): ganho total.
+      speedup_vs_sequencial   sequencial com o mesmo kernel: ganho só do paralelismo.
+      speedup_escalabilidade  mesma configuração com 1 worker.
     """
     grupos = {}
     for registro in registros:
@@ -63,20 +80,23 @@ def resumir(registros):
         if workers < 1:
             raise ValueError("Número de workers deve ser positivo no raw.csv.")
         chave = chave[:-1] + (workers,)
-        grupo = grupos.setdefault(chave, {"tempos": [], "invalidas": 0})
+        grupo = grupos.setdefault(chave, {"tempos": [], "invalidas": 0, "overheads": []})
         tempo = _tempo_valido(registro)
         if tempo is None:
             grupo["invalidas"] += 1
         else:
             grupo["tempos"].append(tempo)
+            overhead = _numero(registro.get("overhead_s"))
+            if overhead is not None:
+                grupo["overheads"].append(overhead)
 
     linhas = []
-    sequenciais = defaultdict(list)
+    sequenciais = defaultdict(list)  # (cenário, kernel) -> medianas
     bases = {}
     for chave, grupo in grupos.items():
         linha = dict.fromkeys(CAMPOS, "")
         linha.update(zip(CENARIO + CONFIGURACAO, chave))
-        linha["implementacao"] = "sequencial" if linha["backend"] == "sequencial" else "paralela"
+        linha["implementacao"] = implementacao(linha["backend"])
         tempos = grupo["tempos"]
         linha.update(repeticoes_validas=len(tempos), repeticoes_invalidas=grupo["invalidas"])
         if tempos:
@@ -87,9 +107,11 @@ def resumir(registros):
                 desvio_padrao_tempo_externo_s=statistics.stdev(tempos) if len(tempos) > 1 else "",
                 minimo_tempo_externo_s=min(tempos), maximo_tempo_externo_s=max(tempos),
             )
+            if grupo["overheads"]:
+                linha["mediana_overhead_s"] = statistics.median(grupo["overheads"])
             cenario = chave[:len(CENARIO)]
             if linha["backend"] == "sequencial" and linha["workers"] == 1:
-                sequenciais[cenario].append(mediana)
+                sequenciais[(cenario, linha["kernel"])].append(mediana)
             if linha["workers"] == 1:
                 bases[chave[:-1]] = mediana
         linhas.append((chave, linha))
@@ -98,11 +120,19 @@ def resumir(registros):
         mediana = linha["mediana_tempo_externo_s"]
         if mediana == "":
             continue
-        referencias = sequenciais[chave[:len(CENARIO)]]
+        cenario = chave[:len(CENARIO)]
+        referencias = sequenciais.get((cenario, "professor"))
+        if referencias is None:
+            referencias = [m for (c, _), ms in sequenciais.items() if c == cenario for m in ms]
         # Se houver referências sequenciais distintas, não escolher arbitrariamente.
         if len(referencias) == 1:
             linha["ganho_vs_sequencial"] = referencias[0] / mediana
-        if linha["implementacao"] == "paralela" and chave[:-1] in bases:
+        mesmo_kernel = sequenciais.get((cenario, linha["kernel"]), [])
+        if linha["implementacao"] != "sequencial" and len(mesmo_kernel) == 1:
+            speedup = mesmo_kernel[0] / mediana
+            linha["speedup_vs_sequencial"] = speedup
+            linha["eficiencia_vs_sequencial"] = speedup / linha["workers"]
+        if linha["implementacao"] != "sequencial" and chave[:-1] in bases:
             speedup = bases[chave[:-1]] / mediana
             linha["speedup_escalabilidade"] = speedup
             linha["eficiencia_escalabilidade"] = speedup / linha["workers"]

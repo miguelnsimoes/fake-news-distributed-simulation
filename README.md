@@ -24,7 +24,20 @@ Na implementação fornecida, um ignorante se torna espalhador quando possui pel
 | --- | --- | --- |
 | Sequencial | Disponível | Código original do professor, preservado integralmente em `src/sequential/fake_news.py`. |
 | Paralela | Disponível | Blocos de linhas divididos entre `threading` ou `multiprocessing`, com buffer duplo e uma barreira por geração. Detalhes em [`docs/versao-paralela.md`](docs/versao-paralela.md). |
-| Distribuída | Planejada | Divisão do processamento entre processos com comunicação por sockets. |
+| Distribuída | Disponível | Faixas de linhas distribuídas a workers TCP, com troca de halos e uma barreira por geração. Detalhes em [`docs/versao-distribuida.md`](docs/versao-distribuida.md). |
+
+As três versões usam o mesmo kernel de cálculo (`src/common/kernels.py`, opção `--kernel referencia|otimizado`), para que as comparações de desempenho meçam só o paralelismo/distribuição.
+
+## Comparar as três versões
+
+```sh
+python benchmarks/run_experiments.py --piloto
+python benchmarks/run_experiments.py --linhas 500 1000 --colunas 500 1000 --geracoes 30 \
+    --espalhadores 0.01 0.02 0.05 --limiar 2 --workers 1 2 4 8 --kernel otimizado
+python benchmarks/analyze.py benchmarks/results/<experimento>
+```
+
+Cada cenário roda o código original do professor (referência de correção), a sequencial do núcleo com o mesmo kernel (base do speedup), `threads`, `processos` e `distribuida`. O `summary.csv` traz `speedup_vs_sequencial` (mesmo kernel), `speedup_escalabilidade` (mesma versão com 1 worker), `ganho_vs_sequencial` (contra o código original) e `mediana_overhead_s` (sincronização/comunicação).
 
 ## Tecnologias
 

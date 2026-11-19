@@ -10,10 +10,12 @@ import socket
 import subprocess
 import sys
 import time
+from typing import List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common.core import (Config, Resultado, criar_grade, dividir_linhas, hash_grade,
-                         registro_historico, somar_contagens)
+from common.core import (KERNEL_PADRAO, KERNELS, Config, Grade, Resultado, criar_grade,
+                         dividir_linhas, hash_grade, registro_historico, somar_contagens)
+from common.energia import desligar_economia_de_energia
 
 if __package__:
     from .protocol import (LIMITE_MENSAGEM, decodificar_linha, enviar_grade,
@@ -23,11 +25,13 @@ else:
                           enviar_mensagem, receber_grade, receber_tipo)
 
 TEMPO_LIMITE = 30.0
+# Versão 2: "iniciar" passou a levar o kernel.
+VERSAO_PROTOCOLO = 2
 
 
 @dataclass
 class ResultadoDistribuido(Resultado):
-    """Mantém o contrato do grupo e acrescenta medições da execução via TCP."""
+    """``Resultado`` com as medições de comunicação."""
     metricas: dict = field(default_factory=dict)
 
     def para_dict(self, incluir_grade: bool = False) -> dict:
@@ -47,7 +51,9 @@ def validar_config(config: Config, porta: int, tempo_limite: float) -> None:
             raise ValueError(f"{nome} deve ser um inteiro não negativo.")
     if not math.isfinite(config.percentual_espalhadores) or not 0 <= config.percentual_espalhadores <= 1:
         raise ValueError("O percentual deve estar entre 0 e 1.")
-    # Duas bordas precisam caber numa mensagem de controle, com folga para o JSON.
+    if config.kernel not in KERNELS:
+        raise ValueError(f"kernel deve ser um de {sorted(KERNELS)}.")
+    # Duas bordas precisam caber numa mensagem de controle.
     if config.colunas > LIMITE_MENSAGEM // 4:
         raise ValueError("A largura máxima é LIMITE_MENSAGEM // 4 colunas.")
     if not 0 <= porta <= 65535 or not math.isfinite(tempo_limite) or tempo_limite <= 0:
@@ -75,7 +81,6 @@ def receber_estado(conexao: socket.socket, geracao: int, linhas: int, colunas: i
 
 
 def iniciar_workers(quantidade: int, porta: int, tempo_limite: float, processos: list) -> None:
-    """Cada worker é um interpretador independente, comunicando-se só por TCP."""
     script = Path(__file__).with_name("worker.py")
     for _ in range(quantidade):
         processos.append(subprocess.Popen(
@@ -87,7 +92,6 @@ def iniciar_workers(quantidade: int, porta: int, tempo_limite: float, processos:
 
 
 def encerrar_recursos(conexoes: list, processos: list) -> None:
-    """Fecha conexões e recolhe processos locais, inclusive se a simulação falhar."""
     for conexao in conexoes:
         try:
             conexao.shutdown(socket.SHUT_RDWR)
@@ -107,16 +111,29 @@ def encerrar_recursos(conexoes: list, processos: list) -> None:
                 processo.wait(timeout=2)
 
 
-def executar_servidor(config: Config, host: str = "127.0.0.1", porta: int = 5000,
-                      *, automaticos: bool = False, tempo_limite: float = TEMPO_LIMITE
-                      ) -> ResultadoDistribuido:
-    """Executa uma simulação. No modo manual, aguarda exatamente num_processos workers.
+def validar_grade(grade: Grade, config: Config) -> List[List[int]]:
+    copia = [list(linha) for linha in grade]
+    if len(copia) != config.linhas or any(len(linha) != config.colunas for linha in copia):
+        raise ValueError("A grade inicial não tem as dimensões de config.")
+    if any(celula not in (0, 1, 2) for linha in copia for celula in linha):
+        raise ValueError("Os estados da grade devem ser 0, 1 ou 2.")
+    return copia
 
-    tempo_s mede somente o laço de gerações, incluindo TCP e espera pela barreira.
-    Criação dos processos, distribuição inicial e coleta final ficam em metricas.
+
+def executar_servidor(config: Config, host: str = "127.0.0.1", porta: int = 5000,
+                      *, automaticos: bool = False, tempo_limite: float = TEMPO_LIMITE,
+                      grade_inicial: Optional[Grade] = None) -> ResultadoDistribuido:
+    """Executa uma simulação; no modo manual, aguarda num_processos workers.
+
+    ``tempo_s`` mede o laço de gerações (com TCP e barreira); o restante fica em
+    ``metricas``. Com ``grade_inicial``, percentual e semente de config são ignorados.
     """
     validar_config(config, porta, tempo_limite)
-    grade = criar_grade(config.linhas, config.colunas, config.percentual_espalhadores, config.semente)
+    if grade_inicial is None:
+        grade = criar_grade(config.linhas, config.colunas, config.percentual_espalhadores,
+                            config.semente)
+    else:
+        grade = validar_grade(grade_inicial, config)
     metricas = {
         "inicializacao_s": 0.0, "finalizacao_s": 0.0, "total_s": 0.0,
         "envio_coordenador_s": 0.0, "recepcao_espera_coordenador_s": 0.0,
@@ -141,7 +158,7 @@ def executar_servidor(config: Config, host: str = "127.0.0.1", porta: int = 5000
                     raise ValueError("Workers automáticos usam apenas o host local 127.0.0.1.")
                 iniciar_workers(config.num_processos, porta_real, tempo_limite, processos)
 
-            # Prazo global: clientes incompletos não deixam o coordenador esperando para sempre.
+            # Prazo global para todos os workers conectarem.
             limite = time.monotonic() + tempo_limite
             for rank in range(config.num_processos):
                 servidor.settimeout(max(0.001, limite - time.monotonic()))
@@ -149,15 +166,15 @@ def executar_servidor(config: Config, host: str = "127.0.0.1", porta: int = 5000
                 conexoes.append(conexao)
                 conexao.settimeout(max(0.001, limite - time.monotonic()))
                 conexao.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                if receber_tipo(conexao, "pronto").get("protocolo") != 1:
-                    raise ValueError("Versão de protocolo incompatível.")
+                if receber_tipo(conexao, "pronto").get("protocolo") != VERSAO_PROTOCOLO:
+                    raise ValueError("Versão de protocolo incompatível: atualize o worker.")
                 logging.info("Worker %s conectado: %s", rank, endereco)
                 conexao.settimeout(tempo_limite)
 
             for conexao, faixa in zip(conexoes, faixas):
                 enviar_mensagem(conexao, {
                     "tipo": "iniciar", "linhas": len(faixa), "colunas": config.colunas,
-                    "limiar": config.limiar_convencimento,
+                    "limiar": config.limiar_convencimento, "kernel": config.kernel,
                     "tem_acima": bool(faixa) and faixa.start > 0,
                     "tem_abaixo": bool(faixa) and faixa.stop < config.linhas,
                 })
@@ -177,7 +194,7 @@ def executar_servidor(config: Config, host: str = "127.0.0.1", porta: int = 5000
                     metricas["envio_coordenador_s"] += time.perf_counter() - comeco
                     metricas["celulas_halo_enviadas"] += len(acima or "") + len(abaixo or "")
 
-                # Barreira: só depois de TODOS responderem são liberados os halos seguintes.
+                # Barreira: os próximos halos só saem depois de todos responderem.
                 comeco = time.perf_counter()
                 estados = [receber_estado(c, geracao, len(f), config.colunas)
                            for c, f in zip(conexoes, faixas)]
@@ -223,14 +240,17 @@ def main() -> int:
     parser.add_argument("-p", "--percentual", type=float, default=0.05)
     parser.add_argument("-t", "--limiar", type=int, default=3)
     parser.add_argument("-s", "--semente", type=int, default=42)
+    parser.add_argument("--kernel", choices=sorted(KERNELS), default=KERNEL_PADRAO,
+                        help="Cálculo de cada linha (common/kernels.py), repassado aos workers.")
     parser.add_argument("--saida", type=Path)
     parser.add_argument("--incluir-grade", action="store_true")
     parser.add_argument("--silencioso", action="store_true")
     args = parser.parse_args()
     config = Config(linhas=args.linhas, colunas=args.colunas, geracoes=args.geracoes,
                     percentual_espalhadores=args.percentual, limiar_convencimento=args.limiar,
-                    semente=args.semente, num_processos=args.workers)
+                    semente=args.semente, num_processos=args.workers, kernel=args.kernel)
     logging.basicConfig(level=logging.WARNING if args.silencioso else logging.INFO, format="%(message)s")
+    desligar_economia_de_energia()
     try:
         resultado = executar_servidor(config, args.host, args.port,
                                       automaticos=args.automaticos, tempo_limite=args.timeout)
