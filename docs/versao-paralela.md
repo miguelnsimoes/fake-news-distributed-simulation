@@ -50,10 +50,10 @@ desligado.
 
 | Arquivo                 | O que faz                                                                                                                                                                        |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `regras.py`             | A regra de transição aplicada a **uma linha**: recebe as linhas `i-1`, `i`, `i+1` da geração atual e devolve a linha `i` da próxima. Não sabe nada de threads.                   |
+| `regras.py`             | Reexporta os kernels, que agora ficam em `src/common/kernels.py` e são usados pelas três versões: a regra aplicada a **uma linha** (recebe as linhas `i-1`, `i`, `i+1` e devolve a nova linha `i`). Não sabe nada de threads. |
 | `fake_news_paralelo.py` | Divide as linhas entre os workers, sincroniza as gerações e junta o resultado. Os dois backends usam o mesmo laço de worker.                                                     |
 | `varredura.py`          | Mede tempos variando o número de workers, calcula speedup, eficiência, desbalanceamento e tempo de sincronização, confere se o resultado é idêntico ao do professor e grava CSV. |
-| `energia.py`            | Impede que o Windows 11 rebaixe o processo para os núcleos de economia no meio da medição (ver "Achado 2").                                                                      |
+| `energia.py`            | Reexporta `src/common/energia.py`, que impede que o Windows 11 rebaixe o processo para os núcleos de economia no meio da medição (ver "Achado 2"). Também é chamado pelo servidor e pelos workers da distribuída. |
 
 ## Como a matriz é dividida
 

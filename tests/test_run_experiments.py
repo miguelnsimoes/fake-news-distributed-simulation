@@ -34,11 +34,20 @@ class TestRunExperiments(unittest.TestCase):
                 pasta, sucesso = runner.executar_experimento(args)
             self.assertTrue(sucesso)
             self.assertTrue(all(grade is entradas[0] for grade in entradas))
-            for nome, quantidade, fase in (("raw.csv", 6, "medicao"), ("warmup.csv", 3, "aquecimento")):
+            # Sequencial (original e kernel comum), threads, processos e distribuída.
+            for nome, quantidade, fase in (("raw.csv", 10, "medicao"), ("warmup.csv", 5, "aquecimento")):
                 with (pasta / nome).open(encoding="utf-8", newline="") as arquivo:
                     registros = list(csv.DictReader(arquivo))
                 self.assertEqual(len(registros), quantidade)
-                self.assertEqual({r["backend"] for r in registros}, {"sequencial", "threads", "processos"})
+                self.assertEqual({r["backend"] for r in registros},
+                                 {"sequencial", "threads", "processos", "distribuida"})
+                self.assertEqual({r["kernel"] for r in registros if r["backend"] == "sequencial"},
+                                 {"professor", "otimizado"})
+                self.assertEqual({r["kernel"] for r in registros if r["backend"] != "sequencial"},
+                                 {"otimizado"})
+                distribuida = [r for r in registros if r["backend"] == "distribuida"]
+                self.assertTrue(all(r["divisao"] == "" and r["celulas_halo"] == "0" for r in distribuida))
+                self.assertTrue(all(float(r["overhead_s"]) >= 0 for r in registros))
                 self.assertTrue(all(r["status"] == "ok" and r["fase"] == fase for r in registros))
                 self.assertTrue(all(float(r["tempo_externo_s"]) >= 0 for r in registros))
             with patch.object(runner, "_executar", return_value=runner.adapters.executar_sequencial([[0]], 0)), redirect_stdout(io.StringIO()):
@@ -51,7 +60,7 @@ class TestRunExperiments(unittest.TestCase):
         divergente = runner.adapters.executar_sequencial([[1]], 0)
         with tempfile.TemporaryDirectory() as temporario:
             args = runner.argumentos(["--piloto", "--workers", "1", "--repeticoes", "1", "--saida", temporario])
-            def executar(grade, geracoes, limiar, backend, workers):
+            def executar(grade, geracoes, limiar, backend, workers, kernel):
                 if backend == "threads":
                     return divergente
                 if backend == "processos":
@@ -66,6 +75,32 @@ class TestRunExperiments(unittest.TestCase):
             erro = next(r for r in registros if r["status"] == "erro")
             self.assertEqual(erro["tempo_externo_s"], "")
             self.assertIn("falha de teste", erro["erro"])
+
+    def test_listas_de_espalhadores_e_limiares_formam_cenarios(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            args = runner.argumentos([
+                "--piloto", "--workers", "2", "--repeticoes", "1", "--saida", temporario,
+                "--espalhadores", "0.05", "0.2", "--limiar", "1", "2",
+                "--backends", "distribuida", "--kernel", "referencia",
+            ])
+            with redirect_stdout(io.StringIO()):
+                pasta, sucesso = runner.executar_experimento(args)
+            self.assertTrue(sucesso)
+            with (pasta / "raw.csv").open(encoding="utf-8", newline="") as arquivo:
+                registros = list(csv.DictReader(arquivo))
+            self.assertEqual({(r["espalhadores"], r["limiar"]) for r in registros},
+                             {("0.05", "1"), ("0.05", "2"), ("0.2", "1"), ("0.2", "2")})
+            self.assertEqual(len({r["cenario"] for r in registros}), 4)
+            self.assertEqual({r["backend"] for r in registros}, {"sequencial", "distribuida"})
+            self.assertEqual({r["kernel"] for r in registros}, {"professor", "referencia"})
+
+    def test_parametros_invalidos(self):
+        for argv in (["--espalhadores", "1.5"], ["--limiar", "9"], ["--backends", "gpu"],
+                     ["--kernel", "professor"]):
+            with self.subTest(argv=argv), redirect_stdout(io.StringIO()), \
+                    patch("sys.stderr", io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    runner.argumentos(argv)
 
     def test_falha_da_referencia_aborta_cenario(self):
         with tempfile.TemporaryDirectory() as temporario:

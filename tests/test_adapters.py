@@ -31,8 +31,36 @@ class TestAdapters(unittest.TestCase):
                     self.assertGreaterEqual(resultado.tempo_geracoes_s, 0)
         self.assertEqual(grade, original)
 
+    def test_distribuida_e_kernels_sequenciais_equivalentes(self):
+        grade = [[0, 1, 0, 0, 1], [1, 0, 0, 2, 0], [0, 0, 1, 0, 0], [0, 1, 0, 0, 0]]
+        original = deepcopy(grade)
+        esperado = adapters.executar_sequencial(grade, 8, 2)
+        for kernel in ("referencia", "otimizado"):
+            with self.subTest(kernel=kernel):
+                sequencial = adapters.executar_sequencial(grade, 8, 2, kernel=kernel)
+                self.assertEqual((sequencial.grade_final, sequencial.historico),
+                                 (esperado.grade_final, esperado.historico))
+                self.assertEqual(sequencial.kernel, kernel)
+                self.assertEqual(sequencial.overhead_s, 0)
+                for workers in (1, 2, 3):
+                    resultado = adapters.executar_distribuido(
+                        grade, 8, 2, workers=workers, kernel=kernel)
+                    self.assertEqual(resultado.grade_final, esperado.grade_final)
+                    self.assertEqual(resultado.historico, esperado.historico)
+                    self.assertEqual(resultado.backend, "distribuida")
+                    self.assertEqual(resultado.celulas_halo,
+                                     2 * (workers - 1) * 5 * resultado.geracoes_executadas)
+                    self.assertGreaterEqual(resultado.overhead_s, 0)
+                    self.assertGreaterEqual(resultado.tempo_externo_s, resultado.tempo_total_s)
+        self.assertEqual(grade, original)
+        with self.assertRaises(ValueError):
+            adapters.executar_sequencial(grade, 1, kernel="gpu")
+        with self.assertRaises(ValueError):
+            adapters.executar_distribuido(grade, 1, kernel="gpu")
+
     def test_parada_e_zero_geracoes_sem_alias_da_entrada(self):
-        for executar in (adapters.executar_sequencial, adapters.executar_paralelo):
+        for executar in (adapters.executar_sequencial, adapters.executar_paralelo,
+                         adapters.executar_distribuido):
             with self.subTest(executar=executar.__name__):
                 grade = [[0, 0], [0, 0]]
                 resultado = executar(grade, 20, 2)
@@ -46,7 +74,8 @@ class TestAdapters(unittest.TestCase):
 
     def test_limite_de_geracoes_e_ordem_das_contagens(self):
         grade = [[0, 1], [2, 0]]
-        for executar in (adapters.executar_sequencial, adapters.executar_paralelo):
+        for executar in (adapters.executar_sequencial, adapters.executar_paralelo,
+                         adapters.executar_distribuido):
             with self.subTest(executar=executar.__name__):
                 resultado = executar(grade, 1, 1)
                 self.assertEqual(resultado.grade_final, [[1, 2], [2, 1]])
@@ -58,10 +87,12 @@ class TestAdapters(unittest.TestCase):
         with redirect_stdout(saida):
             adapters.executar_sequencial([[0, 1]], 2, 1)
             adapters.executar_paralelo([[0, 1]], 2, 1)
+            adapters.executar_distribuido([[0, 1]], 2, 1)
         self.assertEqual(saida.getvalue(), "")
 
     def test_entradas_invalidas(self):
-        for executar in (adapters.executar_sequencial, adapters.executar_paralelo):
+        for executar in (adapters.executar_sequencial, adapters.executar_paralelo,
+                         adapters.executar_distribuido):
             for grade, geracoes in (([], 1), ([[]], 1), ([[0], [0, 1]], 1),
                                     ([[3]], 1), ([[0]], -1)):
                 with self.subTest(executar=executar.__name__, grade=grade, geracoes=geracoes):

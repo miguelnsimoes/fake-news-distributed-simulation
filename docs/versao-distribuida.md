@@ -5,7 +5,7 @@ A simulação agora divide a matriz entre processos workers. O código usa apena
 ## Arquivos
 
 - `server.py`: coordenador, divisão das faixas, encaminhamento dos halos, barreira por geração, histórico e coleta final.
-- `worker.py`: conexão persistente, armazenamento da faixa local e cálculo usando `calcular_faixa`.
+- `worker.py`: conexão persistente, armazenamento da faixa local (linhas `bytes`) e cálculo usando `calcular_linhas` com o kernel escolhido no servidor.
 - `protocol.py`: JSON com prefixo de quatro bytes, validação das mensagens e transferência de grades em lotes.
 - `distribuida.py`: interface `simular(config) -> Resultado` para os testes e integração do grupo.
 - `tests/test_distribuida.py`: protocolo, transferência grande, execução manual, erros e medições.
@@ -25,6 +25,8 @@ Exemplo com mais gerações e resultado em JSON:
 ```powershell
 python src/distributed/server.py --automaticos --workers 4 --port 0 -l 200 -c 200 -g 30 -p 0.02 -t 2 --saida distribuida.json
 ```
+
+Use `--kernel otimizado` para o mesmo kernel padrão da versão paralela; o servidor repassa o nome aos workers na mensagem `iniciar` (padrão: `referencia`). Para comparar tempos entre as versões, use sempre o mesmo kernel nas três.
 
 O limiar 2 e 2% de espalhadores normalmente exercitam mais gerações que os parâmetros originais. O critério de parada continua sendo o original; registre sempre quantas gerações realmente foram executadas.
 
@@ -79,7 +81,7 @@ A execução manual foi validada com processos locais separados. A conectividade
 1. O servidor cria uma única grade com a semente comum e usa `dividir_linhas` para atribuir faixas contíguas. A diferença entre as faixas é de no máximo uma linha.
 2. Cada worker recebe seu bloco uma vez e devolve as bordas iniciais.
 3. Para calcular a geração 1, o servidor encaminha as bordas da geração 0: última linha do vizinho de cima e primeira linha do vizinho de baixo.
-4. Cada worker monta sua fatia com os halos, chama `calcular_faixa` apenas para as próprias linhas e mantém o novo bloco localmente. Os halos não entram na contagem nem na grade final.
+4. Cada worker monta sua fatia com os halos, chama `calcular_linhas` apenas para as próprias linhas e mantém o novo bloco localmente. Os halos não entram na contagem nem na grade final.
 5. Os workers enviam contagens e duas bordas atualizadas, com o número da geração.
 6. O servidor aguarda TODOS os estados daquela geração. Essa espera constitui a barreira. Somente então prepara os próximos halos.
 7. O servidor soma as contagens e registra o histórico. Se não restarem espalhadores ou o limite de gerações for atingido, envia `finalizar` e recolhe os blocos na ordem das faixas.
@@ -95,8 +97,8 @@ TCP é um fluxo de bytes; um `recv` não corresponde necessariamente a uma mensa
 A sequência de mensagens é:
 
 ```text
-worker -> servidor: pronto (versão do protocolo)
-servidor -> worker: iniciar + grade em lotes
+worker -> servidor: pronto (versão do protocolo, atualmente 2)
+servidor -> worker: iniciar (dimensões, limiar, kernel, halos esperados) + grade em lotes
 worker -> servidor: estado da geração 0
 servidor -> worker: calcular (geração e halos)
 worker -> servidor: estado (geração, contagens, bordas e tempo de cálculo)
@@ -126,7 +128,9 @@ print(resultado.metricas)
 
 A interface automática usa loopback e uma porta livre por chamada, sem depender de terminais externos. A saída herda `Resultado`, portanto mantém configuração, histórico, gerações executadas, tempo, grade e hash. `para_dict()` acrescenta as métricas sem incluir a grade, a menos que solicitado.
 
-A integração da distribuída nos adaptadores, executor, análise e gráficos de benchmarks permanece uma tarefa da frente de benchmarks. Ela deverá distinguir o backend distribuído dos processos com memória compartilhada.
+A distribuída está integrada aos benchmarks como o backend `distribuida` (`benchmarks/adapters.py: executar_distribuido`), separada dos processos com memória compartilhada. O executor mede o modo local automático; `executar_servidor(..., grade_inicial=grade)` permite usar a mesma grade de cada cenário. Além dos tempos, o `raw.csv` registra `caminho_critico_s`, `overhead_s` (comunicação, serialização e espera) e `celulas_halo`.
+
+A versão 2 do protocolo acrescentou o kernel; servidor e workers de versões diferentes recusam a conexão ("Versão de protocolo incompatível").
 
 ## Medições e limites de interpretação
 
@@ -136,7 +140,7 @@ A integração da distribuída nos adaptadores, executor, análise e gráficos d
 - `total_s`: execução completa após criar a grade inicial, incluindo recolher os processos locais. Não inclui criar a grade, calcular o hash final ou salvar JSON.
 - `envio_coordenador_s`: chamadas de envio durante o laço, incluindo serialização.
 - `recepcao_espera_coordenador_s`: chamadas de recebimento durante o laço, incluindo validação, espera pelo cálculo dos workers e sincronização.
-- `workers[k].calculo_s`: tempo acumulado apenas em `calcular_faixa`; não inclui contagem ou codificação de bordas.
+- `workers[k].calculo_s`: tempo acumulado apenas em `calcular_linhas`; não inclui contagem ou codificação de bordas.
 - `workers[k].envio_s`: envio dos estados das gerações.
 - `workers[k].recepcao_espera_s`: espera/recebimento dos comandos, incluindo a barreira e o comando final.
 - `caminho_critico_calculo_s`: soma do maior tempo de cálculo observado entre os workers em cada geração.

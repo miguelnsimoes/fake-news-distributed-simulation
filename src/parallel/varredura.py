@@ -7,14 +7,9 @@ Exemplo (da raiz do repositório):
         --workers 1 2 4 6 8 12 16 --repeticoes 3 --sequencial \
         --csv benchmarks/results/paralelo.csv
 
-Para cada combinação de backend, kernel e divisão mostra o tempo mediano das
-gerações, o speedup relativo (tempo com 1 worker na mesma combinação / tempo
-com N) e a eficiência (speedup / N). Com --sequencial roda também o código
-original do professor, confere se o resultado é idêntico e mostra o speedup
-em relação a ele (speedup absoluto).
-
-Atenção: com o limiar padrão do professor (3) a propagação morre em 2 a 4
-gerações, e aumentar --geracoes não muda nada. Para medir, use limiar 2.
+Com --sequencial também roda o código original, confere a equivalência e
+mostra o ganho em relação a ele. Use limiar 2: com 3, a propagação morre em
+poucas gerações.
 """
 
 from __future__ import annotations
@@ -31,9 +26,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Sequence
 
-import fake_news_paralelo as paralelo  # também coloca src/sequential no sys.path
+import fake_news_paralelo as paralelo  # coloca src/sequential no sys.path
 from energia import desligar_economia_de_energia
-from fake_news import (  # código do professor
+from fake_news import (
     ESPALHADOR,
     IGNORANTE,
     INATIVO,
@@ -53,7 +48,7 @@ CAMPOS_CSV = [
 
 
 def rodar_professor(grade, geracoes, limiar):
-    """Laço de executar_simulacao do professor, sem os prints (que entram no tempo dele)."""
+    """Laço de ``executar_simulacao`` do original, sem os prints."""
     comeco = time.perf_counter()
     historico = []
     for _ in range(geracoes):
@@ -93,8 +88,6 @@ def _argumentos(argv: Optional[Sequence[str]]) -> argparse.Namespace:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _argumentos(argv)
-    # Sem isto o Windows 11 joga este processo para os núcleos E depois de ~3 s
-    # e o sequencial e as threads ficam até 2x mais lentos que os processos filhos.
     sem_economia = desligar_economia_de_energia()
     workers = sorted(set(args.workers) | {1})  # 1 worker é a base do speedup
     gil = "ativo" if paralelo.gil_ativo() else "desligado"
@@ -142,9 +135,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     total_execucoes = len(combinacoes) * args.repeticoes
     feitas = 0
 
-    # Cada repetição roda todas as configurações numa ordem embaralhada (semente
-    # fixa). Assim o aquecimento do processador e o fim do turbo não caem sempre
-    # sobre as mesmas variantes, como aconteceria rodando uma depois da outra.
+    # Ordem embaralhada por repetição: aquecimento e perda de turbo não favorecem sempre as mesmas variantes.
     for repeticao in range(1, args.repeticoes + 1):
         ordem = list(combinacoes)
         random.Random(repeticao).shuffle(ordem)

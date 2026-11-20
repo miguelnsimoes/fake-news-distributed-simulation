@@ -1,8 +1,4 @@
-"""A versão paralela tem que dar exatamente o resultado do código do professor.
-
-Rodar da raiz do repositório:
-    python -m unittest discover -s tests -v
-"""
+"""A versão paralela deve dar exatamente o resultado do código original."""
 
 import random
 import sys

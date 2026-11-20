@@ -37,12 +37,7 @@ class Quadro:
 
 
 def gerar_trajetoria(grade_inicial, geracoes, limiar):
-    """Inclui geração zero e preserva a entrada; mesma parada do original.
-
-    Mesmo uma grade inicialmente sem espalhadores executa uma geração se o
-    limite permitir, pois o original verifica a parada após a atualização.
-    Armazena todas as grades: use matrizes pequenas para demonstrações.
-    """
+    """Quadros da geração 0 em diante, com a mesma parada do original."""
     if geracoes < 0:
         raise ValueError("Gerações devem ser não negativas.")
     grade = [list(linha) for linha in grade_inicial]

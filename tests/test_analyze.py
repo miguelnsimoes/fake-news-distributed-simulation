@@ -40,6 +40,26 @@ class TestAnalyze(unittest.TestCase):
         self.assertEqual(dois["speedup_escalabilidade"], 2)
         self.assertEqual(dois["eficiencia_escalabilidade"], 1)
 
+    def test_distribuida_e_speedup_contra_sequencial_do_mesmo_kernel(self):
+        registros = [registro(30, backend="sequencial", kernel="professor", divisao="")]
+        registros += [registro(8, backend="sequencial", divisao="", overhead_s="0")]
+        registros += [registro(10, backend="distribuida", divisao="", overhead_s=o) for o in ("1", "3")]
+        registros += [registro(4, backend="distribuida", divisao="", workers="4", overhead_s="2")]
+        registros += [registro(2, workers="4")]
+        prof, seq, um, quatro, threads = analyze.resumir(registros)
+        self.assertEqual([l["implementacao"] for l in (prof, seq, um, quatro, threads)],
+                         ["sequencial", "sequencial", "distribuida", "distribuida", "paralela"])
+        self.assertEqual(seq["ganho_vs_sequencial"], 30 / 8)
+        self.assertEqual(seq["speedup_vs_sequencial"], "")
+        self.assertEqual(quatro["ganho_vs_sequencial"], 7.5)
+        self.assertEqual(quatro["speedup_vs_sequencial"], 2)
+        self.assertEqual(quatro["eficiencia_vs_sequencial"], 0.5)
+        self.assertEqual(quatro["speedup_escalabilidade"], 2.5)
+        self.assertEqual(um["mediana_overhead_s"], 2)
+        self.assertEqual(threads["speedup_vs_sequencial"], 4)
+        self.assertEqual(threads["speedup_escalabilidade"], "")
+        self.assertEqual(threads["mediana_overhead_s"], "")
+
     def test_tempos_e_validacoes_invalidas(self):
         registros = [registro(t) for t in ("", "abc", "nan", "inf", "-inf", -1, 0)]
         registros += [registro(1, status="erro"), registro(1, matriz_identica="False"),

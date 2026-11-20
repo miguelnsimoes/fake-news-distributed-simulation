@@ -1,17 +1,11 @@
-"""
-Versão SEQUENCIAL da simulação de propagação de Fake News.
+"""CLI da versão sequencial, sobre o núcleo de src/common/core.py.
 
-Uso (a partir da raiz do repositório):
+Uso (da raiz do repositório):
     python src/sequential/run_sequential.py
     python src/sequential/run_sequential.py -l 500 -c 500 -g 100 -p 0.02 -t 2
-    python src/sequential/run_sequential.py --silencioso --saida resultado_seq.json   # benchmarks
-    python src/sequential/run_sequential.py --mostrar-grade -l 20 -c 20 -g 10         # demonstração
-
-A saída em JSON (--saida) segue o formato padronizado de `Resultado`
-(ver src/common/core.py) e é a mesma das versões paralela e distribuída.
-
-Observação: o código original do professor continua intacto em fake_news.py;
-este arquivo usa o núcleo refatorado de src/common/core.py.
+    python src/sequential/run_sequential.py --kernel otimizado -l 500 -c 500 -t 2
+    python src/sequential/run_sequential.py --silencioso --saida resultado_seq.json
+    python src/sequential/run_sequential.py --mostrar-grade -l 20 -c 20 -g 10
 """
 
 import argparse
@@ -19,11 +13,10 @@ import json
 import sys
 from pathlib import Path
 
-# Permite `from common.core import ...` ao rodar o script direto (python src/sequential/...).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from common.core import (
-    Config, Grade, IGNORANTE, ESPALHADOR, INATIVO,
+    KERNEL_PADRAO, KERNELS, Config, Grade, IGNORANTE, ESPALHADOR, INATIVO,
     contar_estados, simular,
 )
 
@@ -31,7 +24,7 @@ SIMBOLOS = {IGNORANTE: ".", ESPALHADOR: "E", INATIVO: "N"}
 
 
 def imprimir_grade(grade: Grade, limite: int = 30) -> None:
-    """Mostra o canto superior esquerdo da grade (no máx. limite x limite)."""
+    """Canto superior esquerdo da grade, até limite x limite."""
     for i in range(min(len(grade), limite)):
         print(" ".join(SIMBOLOS[x] for x in grade[i][:limite]))
     print()
@@ -47,6 +40,8 @@ def ler_argumentos() -> argparse.Namespace:
     p.add_argument("-t", "--limiar", type=int, default=3,
                    help="limiar de convencimento (nº de vizinhos espalhadores)")
     p.add_argument("-s", "--semente", type=int, default=42)
+    p.add_argument("--kernel", choices=sorted(KERNELS), default=KERNEL_PADRAO,
+                   help="cálculo de cada linha (common/kernels.py); use o mesmo nas três versões")
     p.add_argument("--mostrar-grade", action="store_true",
                    help="imprime a grade a cada geração (só p/ grades pequenas)")
     p.add_argument("--silencioso", action="store_true",
@@ -67,6 +62,7 @@ def main() -> None:
         percentual_espalhadores=a.percentual,
         limiar_convencimento=a.limiar,
         semente=a.semente,
+        kernel=a.kernel,
     )
 
     total = config.linhas * config.colunas
@@ -76,6 +72,7 @@ def main() -> None:
         print(f"Gerações: {config.geracoes}")
         print(f"Percentual inicial de espalhadores: {config.percentual_espalhadores * 100:.2f}%")
         print(f"Limiar de convencimento: {config.limiar_convencimento} vizinhos")
+        print(f"Kernel: {config.kernel}")
         print()
 
     def gancho(geracao, grade, contagem):
@@ -101,7 +98,6 @@ def main() -> None:
             print(f"{nome} finais: {final[estado]:,} ({final[estado] / total * 100:,.2f}%)")
         print(f"Hash da grade final: {resultado.hash_grade[:16]}...")
     else:
-        # modo silencioso: uma única linha, fácil de ler em scripts de benchmark
         print(f"sequencial tempo_s={resultado.tempo_s:.6f} hash={resultado.hash_grade}")
 
     if a.saida:

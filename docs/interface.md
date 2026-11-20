@@ -8,7 +8,10 @@ O código comum está em `src/common/core.py`; o código original do professor c
 
 ```
 src/
-  common/core.py                  # base comum: regras, grade, contagem, hash, simular sequencial
+  common/core.py                  # base comum: grade, contagem, hash, simular sequencial
+  common/kernels.py               # regra de transição de uma linha (kernels "referencia" e "otimizado")
+  common/estados.py               # códigos dos estados (0, 1, 2)
+  common/energia.py               # evita o rebaixamento de processos no Windows (EcoQoS)
   sequential/fake_news.py         # ORIGINAL do professor (não alterar)
   sequential/run_sequential.py    # CLI da versão sequencial (usa common/core.py)
   parallel/paralela.py            # (Pedro)  expõe simular(config)
@@ -58,7 +61,11 @@ Os scripts de cada versão põem a própria pasta no `sys.path` para os imports 
 `import parallel` passa a achar o arquivo `parallel.py` em vez da pasta, e `parallel.parallel`
 falha. Na suíte completa o teste é pulado em silêncio, embora rodando sozinho funcione.
 
-- `Config`: `linhas, colunas, geracoes, percentual_espalhadores, limiar_convencimento, semente, num_threads, num_processos`
+- `Config`: `linhas, colunas, geracoes, percentual_espalhadores, limiar_convencimento, semente, kernel, num_threads, num_processos`
+- `kernel`: nome de um kernel de `common/kernels.py` (`"referencia"`, padrão, ou `"otimizado"`).
+  **Todas as versões usam o kernel de `config.kernel`**, então as comparações de tempo entre elas
+  medem só o efeito do paralelismo/distribuição. O ganho do kernel otimizado é outra coisa
+  (otimização de algoritmo) e deve ser apresentado separado.
 - `Resultado`: `versao, config, historico, geracoes_executadas, tempo_s, grade_final, hash_grade`
 - `historico`: lista de `{"geracao", "ignorantes", "espalhadores", "inativos"}`, uma por geração
   (use `registro_historico`).
@@ -74,8 +81,10 @@ falha. Na suíte completa o teste é pulado em silêncio, embora rodando sozinho
 | Função | Para quê |
 |---|---|
 | `dividir_linhas(total, partes)` | divide as linhas em faixas contíguas e balanceadas |
-| `calcular_faixa(grade, ini, fim, limiar)` | calcula só as linhas `[ini, fim)`; **lê** a grade e devolve linhas novas |
-| `contar_estados(grade)` / `somar_contagens([...])` | contagem parcial por thread/worker e soma |
+| `calcular_faixa(grade, ini, fim, limiar, kernel)` | calcula só as linhas `[ini, fim)`; **lê** a grade e devolve linhas novas |
+| `calcular_linhas(linhas, ini, fim, limiar, kernel)` | o mesmo no formato interno (`bytes` por linha), sem conversões; usado no laço sequencial e no worker distribuído |
+| `evoluir(grade, geracoes, limiar, kernel)` | laço sequencial a partir de uma grade pronta; devolve `(grade_final, historico, tempo_s)` |
+| `contar_estados(grade)` / `contar_linhas(linhas)` / `somar_contagens([...])` | contagem parcial por thread/worker e soma |
 | `registro_historico(geracao, contagem)` | formato padrão do histórico |
 | `hash_grade(grade)` | prova de que duas versões chegaram ao mesmo estado |
 
@@ -94,11 +103,9 @@ bordas com os vizinhos, monta `fatia = [halo_cima] + minhas_linhas + [halo_baixo
 bordas globais) e chama `calcular_faixa(fatia, off, off + n, limiar)`, com `off = 1` se houver halo
 em cima, senão `0`. Isso é validado por `test_fatia_com_halo_igual_geracao_completa`.
 
-Atenção ao `protocol.py` atual: o limite de 1 MiB por mensagem JSON. Uma lista de inteiros em JSON
-gasta cerca de 3 bytes por célula, então 1 MiB comporta algo perto de 350 mil células. O envio
-inicial da fatia de cada worker passa disso em matrizes grandes (ex.: 1000x1000 com 2 workers). Vale
-enviar as linhas como texto (um caractere por célula, ex. `"0120..."`) ou em lotes, ou aumentar o
-limite.
+O `protocol.py` limita cada mensagem a 1 MiB; a grade inicial e a final viajam em lotes de texto
+(um caractere por célula), então não há limite prático de tamanho (detalhes em
+`docs/versao-distribuida.md`).
 
 ## Parâmetros para os benchmarks
 
@@ -119,6 +126,8 @@ Sugestão: usar limiar 2 (ou 1) nos experimentos e registrar quantas gerações 
 
 - Regras e resultados **idênticos** (testado contra o próprio `fake_news.py` em 9 cenários).
 - Sem `deepcopy`: cada linha nova é construída direto (ganho pequeno, ~10%).
+- O laço sequencial (`evoluir`) trabalha com linhas `bytes`, o mesmo formato da paralela e do worker
+  distribuído; as listas só aparecem na entrada e na saída, fora do tempo medido.
 - `criar_grade` usa `random.Random(semente)` local em vez de `random.seed` global: mesma sequência,
   sem efeito colateral entre módulos/threads.
 - Tempo medido com `time.perf_counter()`.

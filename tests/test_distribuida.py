@@ -21,6 +21,16 @@ from distributed.distribuida import simular
 from distributed import protocol
 from distributed.server import executar_servidor
 from distributed.worker import processar_tarefas
+from common.core import proxima_geracao
+
+
+def nucleo_proxima(grade, geracoes, limiar):
+    """Laço sequencial do núcleo com a mesma parada do original."""
+    for _ in range(geracoes):
+        grade = proxima_geracao(grade, limiar)
+        if not any(1 in linha for linha in grade):
+            break
+    return grade
 
 
 @contextmanager
@@ -150,6 +160,45 @@ class TestSimulacaoDistribuida(unittest.TestCase):
                 setattr(config, campo, valor)
                 with self.assertRaises(ValueError):
                     simular(config)
+
+    def test_kernel_e_grade_inicial_externa(self):
+        grade = [[0, 1, 0, 0], [1, 0, 2, 0], [0, 0, 0, 1], [0, 1, 0, 0], [0, 0, 0, 0]]
+        for kernel in ("referencia", "otimizado"):
+            with self.subTest(kernel=kernel):
+                config = Config(linhas=5, colunas=4, geracoes=6, limiar_convencimento=1,
+                                num_processos=2, kernel=kernel)
+                resultado = executar_servidor(config, porta=0, automaticos=True,
+                                              grade_inicial=grade)
+                esperado = nucleo_proxima(grade, 6, 1)
+                self.assertEqual(resultado.grade_final, esperado)
+                self.assertEqual(resultado.config.kernel, kernel)
+        with self.assertRaises(ValueError):  # dimensões diferentes de config
+            executar_servidor(Config(linhas=4, colunas=4, num_processos=1), porta=0,
+                              automaticos=True, grade_inicial=grade)
+        with self.assertRaises(ValueError):
+            simular(Config(kernel="gpu"))
+
+    def test_worker_rejeita_kernel_desconhecido(self):
+        with par_de_sockets() as (servidor, worker):
+            erros = []
+
+            def executar():
+                try:
+                    processar_tarefas(worker)
+                except Exception as erro:
+                    erros.append(erro)
+
+            thread = threading.Thread(target=executar, daemon=True)
+            thread.start()
+            self.assertEqual(protocol.receber_tipo(servidor, "pronto")["protocolo"], 2)
+            protocol.enviar_mensagem(servidor, {
+                "tipo": "iniciar", "linhas": 1, "colunas": 3, "limiar": 1, "kernel": "gpu",
+                "tem_acima": False, "tem_abaixo": False,
+            })
+            thread.join(timeout=5)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(len(erros), 1)
+            self.assertIsInstance(erros[0], ValueError)
 
     def test_timeout_sem_workers_fecha_porta(self):
         with socket.socket() as reserva:
