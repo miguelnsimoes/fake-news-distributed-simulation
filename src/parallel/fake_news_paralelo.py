@@ -27,9 +27,11 @@ for _pasta in (_SRC, _SRC / "sequential"):
         sys.path.insert(0, str(_pasta))
 
 from common import core  # noqa: E402
-from common.core import ESPALHADOR, IGNORANTE, INATIVO, criar_grade  # noqa: E402
+from common.argumentos import adicionar_extensoes, extensoes_de  # noqa: E402
+from common.core import ESPALHADOR, IGNORANTE, INATIVO  # noqa: E402
 from common.energia import desligar_economia_de_energia  # noqa: E402
 from common.kernels import KERNELS, Kernel, obter_kernel  # noqa: E402
+from common.modelo import Modelo, obter_kernel_estendido  # noqa: E402
 
 BACKENDS = ("threads", "processos")
 DIVISOES = ("estatica", "dinamica")
@@ -81,8 +83,10 @@ class _Tarefa:
     colunas: int
     geracoes: int
     limiar: int
-    kernel: Kernel
+    kernel: Kernel  # versão estendida quando há modelo
     pedaco: int  # 0 = divisão estática
+    modelo: Optional[Modelo] = None
+    tipos: Optional[tuple[bytes, ...]] = None
 
 
 def dividir_linhas(total_linhas: int, partes: int) -> list[tuple[int, int]]:
@@ -126,18 +130,24 @@ def _faixas(tarefa: _Tarefa, paridade: int, fila: Any) -> Iterator[tuple[int, in
 
 def _calcular_faixa(
     tarefa: _Tarefa, inicio: int, fim: int, origem: int, destino: int,
-    ler: Ler, escrever: Escrever,
+    ler: Ler, escrever: Escrever, geracao: int,
 ) -> tuple[int, int]:
     """Devolve (ignorantes, espalhadores) das linhas calculadas."""
     calcular = tarefa.kernel
     limiar = tarefa.limiar
+    modelo, tipos = tarefa.modelo, tarefa.tipos
     ultima = tarefa.total_linhas - 1
     ignorantes = espalhadores = 0
     acima = ler(origem, inicio - 1) if inicio > 0 else None
     atual = ler(origem, inicio)
     for i in range(inicio, fim):
         abaixo = ler(origem, i + 1) if i < ultima else None
-        nova = calcular(acima, atual, abaixo, limiar)
+        if modelo is None:
+            nova = calcular(acima, atual, abaixo, limiar)
+        else:
+            trio = None if tipos is None else (
+                tipos[i - 1] if i > 0 else None, tipos[i], tipos[i + 1] if i < ultima else None)
+            nova = calcular(acima, atual, abaixo, limiar, trio, modelo, geracao, i)
         escrever(destino, i, nova)
         ignorantes += nova.count(IGNORANTE)
         espalhadores += nova.count(ESPALHADOR)
@@ -159,7 +169,8 @@ def _trabalhar(
 
         ignorantes = espalhadores = linhas = 0
         for inicio, fim in _faixas(tarefa, origem, fila):
-            ign, esp = _calcular_faixa(tarefa, inicio, fim, origem, destino, ler, escrever)
+            ign, esp = _calcular_faixa(tarefa, inicio, fim, origem, destino, ler, escrever,
+                                       geracao + 1)
             ignorantes += ign
             espalhadores += esp
             linhas += fim - inicio
@@ -365,8 +376,13 @@ def simular_paralelo(
     kernel: Union[str, Kernel] = "otimizado",
     divisao: str = "estatica",
     pedaco: Optional[int] = None,
+    modelo: Optional[Modelo] = None,
+    tipos: Optional[Sequence[Sequence[int]]] = None,
 ) -> ResultadoSimulacao:
-    """Mesma regra e parada da sequencial. ``pedaco`` só vale na divisão dinâmica."""
+    """Mesma regra e parada da sequencial. ``pedaco`` só vale na divisão dinâmica.
+
+    ``modelo`` e ``tipos`` ligam as extensões (ver ``core.preparar_inicio``).
+    """
     if backend not in BACKENDS:
         raise ValueError(f"backend deve ser um de {BACKENDS}, não {backend!r}.")
     if divisao not in DIVISOES:
@@ -385,14 +401,22 @@ def simular_paralelo(
     if any(len(linha) != colunas for linha in linhas):
         raise ValueError("Todas as linhas da grade precisam ter o mesmo tamanho.")
 
-    calcular = obter_kernel(kernel)
+    linhas_tipos = None
+    if tipos is not None:
+        if modelo is None:
+            raise ValueError("tipos exige um modelo.")
+        linhas_tipos = tuple(bytes(linha) for linha in tipos)
+        if len(linhas_tipos) != len(linhas) or any(len(t) != colunas for t in linhas_tipos):
+            raise ValueError("O mapa de tipos precisa ter as dimensões da grade.")
+
+    calcular = obter_kernel(kernel) if modelo is None else obter_kernel_estendido(kernel)
     nome_kernel = kernel if isinstance(kernel, str) else getattr(kernel, "__name__", "?")
     tamanho_pedaco = 0
     if divisao == "dinamica":
         tamanho_pedaco = pedaco or tamanho_pedaco_automatico(len(linhas), workers)
     tarefas = [
         _Tarefa(rank, inicio, fim, workers, len(linhas), colunas, geracoes,
-                limiar_convencimento, calcular, tamanho_pedaco)
+                limiar_convencimento, calcular, tamanho_pedaco, modelo, linhas_tipos)
         for rank, (inicio, fim) in enumerate(dividir_linhas(len(linhas), workers))
     ]
 
@@ -445,13 +469,20 @@ def _argumentos(argv: Optional[Sequence[str]]) -> argparse.Namespace:
                         help="Linhas por pedaço na divisão dinâmica (padrão: automático).")
     parser.add_argument("--sem-geracoes", action="store_true",
                         help="Não imprime a linha de cada geração.")
+    adicionar_extensoes(parser)
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _argumentos(argv)
     desligar_economia_de_energia()
-    grade = criar_grade(args.linhas, args.colunas, args.espalhadores, args.semente)
+    config = core.Config(linhas=args.linhas, colunas=args.colunas,
+                         percentual_espalhadores=args.espalhadores, semente=args.semente,
+                         **extensoes_de(args))
+    try:
+        grade, tipos, modelo = core.preparar_inicio(config)
+    except ValueError as erro:
+        raise SystemExit(f"Erro: {erro}") from None
     total = args.linhas * args.colunas
     espalhadores_iniciais = sum(linha.count(ESPALHADOR) for linha in grade)
 
@@ -470,7 +501,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print()
 
     resultado = simular_paralelo(grade, args.geracoes, args.limiar, args.workers,
-                                 args.backend, args.kernel, args.divisao, args.pedaco)
+                                 args.backend, args.kernel, args.divisao, args.pedaco,
+                                 modelo, tipos)
 
     # Impresso depois para não entrar no tempo medido.
     if not args.sem_geracoes:

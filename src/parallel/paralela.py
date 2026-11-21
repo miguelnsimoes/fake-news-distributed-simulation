@@ -19,8 +19,8 @@ for _pasta in (_SRC, _PASTA_PARALELA):
 from common.core import (  # noqa: E402
     Config,
     Resultado,
-    criar_grade,
     hash_grade,
+    preparar_inicio,
 )
 from fake_news_paralelo import BACKENDS, simular_paralelo  # noqa: E402
 
@@ -36,8 +36,7 @@ def simular(
         raise ValueError(f"backend deve ser um de {BACKENDS}, não {backend!r}.")
     workers = config.num_threads if backend == "threads" else config.num_processos
 
-    grade = criar_grade(config.linhas, config.colunas,
-                        config.percentual_espalhadores, config.semente)
+    grade, tipos, modelo = preparar_inicio(config)
     saida = simular_paralelo(
         grade,
         config.geracoes,
@@ -46,6 +45,8 @@ def simular(
         backend=backend,
         kernel=kernel or config.kernel,
         divisao=divisao,
+        modelo=modelo,
+        tipos=tipos,
     )
 
     historico = [

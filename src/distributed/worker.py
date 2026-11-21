@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common.core import KERNEL_PADRAO, calcular_linhas, contar_linhas
 from common.energia import desligar_economia_de_energia
 from common.kernels import obter_kernel
+from common.modelo import Modelo
 
 if __package__:
     from .protocol import (codificar_linha, decodificar_linha, enviar_grade,
@@ -21,7 +22,7 @@ else:
                           enviar_mensagem, receber_grade, receber_mensagem, receber_tipo)
 
 TEMPO_LIMITE = 30.0
-VERSAO_PROTOCOLO = 2  # igual a server.VERSAO_PROTOCOLO
+VERSAO_PROTOCOLO = 3  # igual a server.VERSAO_PROTOCOLO
 
 
 def estado_da_faixa(grade: list, geracao: int, tempo_calculo: float) -> dict:
@@ -44,6 +45,11 @@ def processar_tarefas(conexao: socket.socket) -> dict:
     kernel = obter_kernel(inicio.get("kernel", KERNEL_PADRAO))
     # Linhas em bytes, como na sequencial e na paralela: mesmo custo por célula.
     grade = [bytes(linha) for linha in receber_grade(conexao, linhas, colunas)]
+    modelo = Modelo(**inicio["modelo"]) if inicio.get("modelo") else None
+    tipos = None
+    if inicio.get("tem_tipos"):
+        linhas_tipos = linhas + inicio["tem_acima"] + inicio["tem_abaixo"]
+        tipos = [bytes(linha) for linha in receber_grade(conexao, linhas_tipos, colunas)]
     enviar_mensagem(conexao, estado_da_faixa(grade, 0, 0.0))
     geracao = 0
     metricas = {"calculo_s": 0.0, "envio_s": 0.0, "recepcao_espera_s": 0.0}
@@ -72,7 +78,9 @@ def processar_tarefas(conexao: socket.socket) -> dict:
             fatia.append(bytes(decodificar_linha(comando["abaixo"], colunas)))
 
         comeco = time.perf_counter()
-        grade = calcular_linhas(fatia, offset, offset + linhas, inicio["limiar"], kernel)
+        grade = calcular_linhas(fatia, offset, offset + linhas, inicio["limiar"], kernel,
+                                modelo=modelo, tipos=tipos, geracao=geracao + 1,
+                                indice_global=inicio.get("linha_inicial", 0) - offset)
         tempo_calculo = time.perf_counter() - comeco
         metricas["calculo_s"] += tempo_calculo
         geracao += 1

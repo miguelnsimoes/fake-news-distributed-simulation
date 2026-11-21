@@ -60,7 +60,7 @@ class TestRunExperiments(unittest.TestCase):
         divergente = runner.adapters.executar_sequencial([[1]], 0)
         with tempfile.TemporaryDirectory() as temporario:
             args = runner.argumentos(["--piloto", "--workers", "1", "--repeticoes", "1", "--saida", temporario])
-            def executar(grade, geracoes, limiar, backend, workers, kernel):
+            def executar(grade, geracoes, limiar, backend, workers, kernel, *extensoes):
                 if backend == "threads":
                     return divergente
                 if backend == "processos":
@@ -94,9 +94,38 @@ class TestRunExperiments(unittest.TestCase):
             self.assertEqual({r["backend"] for r in registros}, {"sequencial", "distribuida"})
             self.assertEqual({r["kernel"] for r in registros}, {"professor", "referencia"})
 
+    def test_extensoes_sem_referencia_do_original(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            args = runner.argumentos([
+                "--piloto", "--workers", "2", "--repeticoes", "1", "--saida", temporario,
+                "--limiar", "1", "--probabilidade", "1", "0.5", "--bots", "0", "0.05",
+                "--influenciadores", "0", "0.1", "--peso-influenciador", "2", "4",
+            ])
+            with redirect_stdout(io.StringIO()):
+                pasta, sucesso = runner.executar_experimento(args)
+            self.assertTrue(sucesso)
+            with (pasta / "raw.csv").open(encoding="utf-8", newline="") as arquivo:
+                registros = list(csv.DictReader(arquivo))
+            parametros = {(r["probabilidade"], r["influenciadores"], r["peso_influenciador"],
+                           r["bots"]) for r in registros}
+            # Sem influenciadores o peso não importa: 2 × (1 + 2) × 2 = 12 cenários.
+            self.assertEqual(len(parametros), 12)
+            self.assertEqual(len({r["cenario"] for r in registros}), 12)
+            for registro in registros:
+                original = (registro["probabilidade"], registro["influenciadores"],
+                            registro["bots"]) == ("1.0", "0.0", "0.0")
+                if registro["kernel"] == "professor":
+                    self.assertTrue(original)
+            com_extensao = [r for r in registros if r["bots"] == "0.05"]
+            self.assertTrue(com_extensao)
+            self.assertNotIn("professor", {r["kernel"] for r in com_extensao})
+            self.assertEqual({r["backend"] for r in com_extensao},
+                             {"sequencial", "threads", "processos", "distribuida"})
+
     def test_parametros_invalidos(self):
         for argv in (["--espalhadores", "1.5"], ["--limiar", "9"], ["--backends", "gpu"],
-                     ["--kernel", "professor"]):
+                     ["--kernel", "professor"], ["--probabilidade", "0"], ["--bots", "1.2"],
+                     ["--influenciadores", "-0.1"], ["--peso-influenciador", "0"]):
             with self.subTest(argv=argv), redirect_stdout(io.StringIO()), \
                     patch("sys.stderr", io.StringIO()):
                 with self.assertRaises(SystemExit):

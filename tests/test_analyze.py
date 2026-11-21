@@ -60,6 +60,18 @@ class TestAnalyze(unittest.TestCase):
         self.assertEqual(threads["speedup_escalabilidade"], "")
         self.assertEqual(threads["mediana_overhead_s"], "")
 
+    def test_extensoes_entram_no_cenario_e_sao_opcionais(self):
+        extensoes = dict(probabilidade="0.5", influenciadores="0.02",
+                         peso_influenciador="3", bots="0.01")
+        seq = registro(8, backend="sequencial", divisao="", cenario="2", **extensoes)
+        par = registro(2, workers="4", cenario="2", **extensoes)
+        antigo = registro(4)  # raw.csv sem as colunas das extensões
+        linha_seq, linha_par, linha_antiga = analyze.resumir([seq, par, antigo])
+        self.assertEqual(linha_par["bots"], "0.01")
+        self.assertEqual(linha_par["speedup_vs_sequencial"], 4)
+        self.assertEqual(linha_antiga["probabilidade"], "")
+        self.assertEqual(linha_seq["implementacao"], "sequencial")
+
     def test_tempos_e_validacoes_invalidas(self):
         registros = [registro(t) for t in ("", "abc", "nan", "inf", "-inf", -1, 0)]
         registros += [registro(1, status="erro"), registro(1, matriz_identica="False"),

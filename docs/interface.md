@@ -12,6 +12,8 @@ src/
   common/kernels.py               # regra de transição de uma linha (kernels "referencia" e "otimizado")
   common/estados.py               # códigos dos estados (0, 1, 2)
   common/energia.py               # evita o rebaixamento de processos no Windows (EcoQoS)
+  common/modelo.py                # extensões: probabilidade, influenciadores e bots
+  common/argumentos.py            # opções de CLI das extensões, iguais nas três versões
   sequential/fake_news.py         # ORIGINAL do professor (não alterar)
   sequential/run_sequential.py    # CLI da versão sequencial (usa common/core.py)
   parallel/paralela.py            # (Pedro)  expõe simular(config)
@@ -66,6 +68,10 @@ falha. Na suíte completa o teste é pulado em silêncio, embora rodando sozinho
   **Todas as versões usam o kernel de `config.kernel`**, então as comparações de tempo entre elas
   medem só o efeito do paralelismo/distribuição. O ganho do kernel otimizado é outra coisa
   (otimização de algoritmo) e deve ser apresentado separado.
+- Extensões do modelo: `probabilidade_convencimento`, `percentual_influenciadores`,
+  `peso_influenciador` e `percentual_bots` (ver `docs/extensoes-modelo.md`). Os padrões
+  reproduzem o modelo original. Use `core.preparar_inicio(config)`, que devolve
+  `(grade, tipos, modelo)`, para criar o estado inicial em qualquer versão.
 - `Resultado`: `versao, config, historico, geracoes_executadas, tempo_s, grade_final, hash_grade`
 - `historico`: lista de `{"geracao", "ignorantes", "espalhadores", "inativos"}`, uma por geração
   (use `registro_historico`).

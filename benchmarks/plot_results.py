@@ -63,6 +63,17 @@ def rotulo(serie):
     return f"{implementacao} / {backend}\nkernel={kernel}; divisão={divisao or '—'}"
 
 
+def _descrever_extensoes(registro):
+    """Linha extra do título quando o cenário usa extensões do modelo."""
+    p = registro.get("probabilidade") or "1.0"
+    influenciadores = registro.get("influenciadores") or "0.0"
+    bots = registro.get("bots") or "0.0"
+    if float(p) == 1 and float(influenciadores) == 0 and float(bots) == 0:
+        return ""
+    return (f"\nExtensões: probabilidade={p}; influenciadores={influenciadores} "
+            f"(peso {registro.get('peso_influenciador') or '-'}); bots={bots}")
+
+
 def _figura(titulo):
     figura = Figure(figsize=(11, 7), layout="constrained")
     FigureCanvasAgg(figura)
@@ -90,7 +101,8 @@ def gerar_graficos(experimento):
         exp, identificador, linhas, colunas, geracoes, espalhadores, limiar, semente = cenario
         titulo = (f"Experimento {exp} | cenário {identificador}\n"
                   f"Matriz {linhas}×{colunas}; gerações máximas={geracoes}; "
-                  f"fração inicial={espalhadores}; limiar={limiar}; semente={semente}")
+                  f"fração inicial={espalhadores}; limiar={limiar}; semente={semente}"
+                  + _descrever_extensoes(registros[0]))
         registros.sort(key=lambda r: tuple(r[c] for c in SERIE) + (r["workers"],))
         validos = [r for r in registros if math.isfinite(r[METRICAS[0]])]
         figura, eixo = _figura("Tempo externo mediano\n" + titulo)

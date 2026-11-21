@@ -14,12 +14,15 @@ from collections import defaultdict
 from pathlib import Path
 
 
-CENARIO = (
+CENARIO_BASE = (
     "experimento", "cenario", "linhas", "colunas", "geracoes_pedidas",
     "espalhadores", "limiar", "semente",
 )
+# Opcionais: ficam vazios em raw.csv gerados antes das extensões do modelo.
+EXTENSOES = ("probabilidade", "influenciadores", "peso_influenciador", "bots")
+CENARIO = CENARIO_BASE + EXTENSOES
 CONFIGURACAO = ("backend", "kernel", "divisao", "workers")
-OBRIGATORIOS = set(CENARIO + CONFIGURACAO + (
+OBRIGATORIOS = set(CENARIO_BASE + CONFIGURACAO + (
     "fase", "tempo_externo_s", "matriz_identica", "historico_identico", "status",
 ))
 CAMPOS = list(CENARIO) + ["implementacao"] + list(CONFIGURACAO) + [
@@ -72,7 +75,7 @@ def resumir(registros):
     for registro in registros:
         if registro["fase"].strip() != "medicao":
             continue
-        chave = tuple(registro[campo].strip() for campo in CENARIO + CONFIGURACAO)
+        chave = tuple((registro.get(campo) or "").strip() for campo in CENARIO + CONFIGURACAO)
         try:
             workers = int(chave[-1])
         except ValueError as erro:

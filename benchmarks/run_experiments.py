@@ -4,7 +4,10 @@ Da raiz: py benchmarks/run_experiments.py --piloto
 Exemplo: py benchmarks/run_experiments.py --linhas 500 1000 --colunas 500 1000
          --geracoes 30 --espalhadores 0.01 0.02 0.05 --limiar 2 --workers 1 2 4 8
 
-Tamanhos, gerações, espalhadores e limiares formam um produto cartesiano.
+Tamanhos, gerações, espalhadores, limiares e parâmetros das extensões
+(--probabilidade, --influenciadores, --peso-influenciador, --bots) formam um
+produto cartesiano. Cenários com extensões não têm a referência do código
+original, que não as implementa: a referência passa a ser o sequencial do núcleo.
 """
 
 from __future__ import annotations
@@ -27,11 +30,14 @@ if __package__:
 else:
     import adapters
 
+from common.modelo import PESO_INFLUENCIADOR_PADRAO  # noqa: E402  (src/ no path via adapters)
+
 
 CAMPOS = [
     "experimento", "cenario", "fase", "repeticao", "backend", "workers",
     "kernel", "divisao", "linhas", "colunas", "geracoes_pedidas",
-    "espalhadores", "limiar", "semente", "geracoes_executadas",
+    "espalhadores", "limiar", "semente",
+    "probabilidade", "influenciadores", "peso_influenciador", "bots", "geracoes_executadas",
     "tempo_externo_s", "tempo_geracoes_s", "tempo_total_s",
     "caminho_critico_s", "overhead_s", "celulas_halo",
     "matriz_identica", "historico_identico", "status", "erro",
@@ -55,6 +61,12 @@ def argumentos(argv=None):
                         help="Versões medidas além do sequencial (padrão: todas).")
     parser.add_argument("--kernel", choices=KERNELS, default="otimizado",
                         help="Kernel comum (common/kernels.py) usado por TODAS as versões medidas.")
+    extensoes = parser.add_argument_group("extensões do modelo (docs/extensoes-modelo.md)")
+    extensoes.add_argument("--probabilidade", type=float, nargs="+", default=[1.0])
+    extensoes.add_argument("--influenciadores", type=float, nargs="+", default=[0.0])
+    extensoes.add_argument("--peso-influenciador", type=int, nargs="+",
+                           default=[PESO_INFLUENCIADOR_PADRAO])
+    extensoes.add_argument("--bots", type=float, nargs="+", default=[0.0])
     parser.add_argument("--repeticoes", type=int)
     parser.add_argument("--saida", type=Path, default=Path(__file__).resolve().parent / "results")
     args = parser.parse_args(argv)
@@ -70,19 +82,41 @@ def argumentos(argv=None):
     if (any(not 0 <= p <= 1 for p in args.espalhadores)
             or any(not 0 <= t <= 8 for t in args.limiar)):
         parser.error("Espalhadores devem estar entre 0 e 1; limiar entre 0 e 8.")
+    if (any(not 0 < p <= 1 for p in args.probabilidade)
+            or any(not 0 <= f <= 1 for f in args.influenciadores + args.bots)
+            or any(w < 1 for w in args.peso_influenciador)):
+        parser.error("Probabilidade em (0, 1]; influenciadores e bots entre 0 e 1; peso >= 1.")
     return args
 
 
-def _executar(grade, geracoes, limiar, backend, workers, kernel):
+def cenarios(args):
+    """Produto cartesiano dos parâmetros, sem repetir cenários equivalentes.
+
+    Sem influenciadores o peso não tem efeito, então só o primeiro é usado.
+    """
+    vistos = {}
+    for linhas, colunas, geracoes, espalhadores, limiar, p, influenciadores, peso, bots in (
+            itertools.product(args.linhas, args.colunas, args.geracoes, args.espalhadores,
+                              args.limiar, args.probabilidade, args.influenciadores,
+                              args.peso_influenciador, args.bots)):
+        if influenciadores == 0:
+            peso = args.peso_influenciador[0]
+        vistos.setdefault((linhas, colunas, geracoes, espalhadores, limiar, p,
+                           influenciadores, peso, bots), None)
+    return list(vistos)
+
+
+def _executar(grade, geracoes, limiar, backend, workers, kernel, modelo=None, tipos=None):
+    extensoes = dict(modelo=modelo, tipos=tipos)
     if backend == "sequencial":
-        return adapters.executar_sequencial(grade, geracoes, limiar, kernel=kernel)
+        return adapters.executar_sequencial(grade, geracoes, limiar, kernel=kernel, **extensoes)
     if backend == "distribuida":
         return adapters.executar_distribuido(
-            grade, geracoes, limiar, workers=workers, kernel=kernel,
+            grade, geracoes, limiar, workers=workers, kernel=kernel, **extensoes,
         )
     return adapters.executar_paralelo(
         grade, geracoes, limiar, workers=workers, backend=backend,
-        kernel=kernel, divisao="estatica",
+        kernel=kernel, divisao="estatica", **extensoes,
     )
 
 
@@ -114,7 +148,7 @@ def executar_experimento(args):
     }
     (pasta / "metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
     # (backend, workers, kernel); o primeiro é a referência de correção.
-    configuracoes = [("sequencial", 1, "professor"), ("sequencial", 1, args.kernel)] + [
+    comparadas = [("sequencial", 1, args.kernel)] + [
         (backend, n, args.kernel)
         for backend in dict.fromkeys(args.backends) for n in sorted(set(args.workers))
     ]
@@ -126,12 +160,17 @@ def executar_experimento(args):
                       "aquecimento": csv.DictWriter(warmup, fieldnames=CAMPOS)}
         for escritor in escritores.values():
             escritor.writeheader()
-        cenarios = itertools.product(
-            dict.fromkeys(args.linhas), dict.fromkeys(args.colunas), dict.fromkeys(args.geracoes),
-            dict.fromkeys(args.espalhadores), dict.fromkeys(args.limiar),
-        )
-        for cenario, (linhas, colunas, geracoes, espalhadores, limiar) in enumerate(cenarios, 1):
-            grade = adapters.sequencial.criar_grade(linhas, colunas, espalhadores, args.semente)
+        for cenario, parametros in enumerate(cenarios(args), 1):
+            (linhas, colunas, geracoes, espalhadores, limiar,
+             probabilidade, influenciadores, peso, bots) = parametros
+            config = adapters.core.Config(
+                linhas=linhas, colunas=colunas, percentual_espalhadores=espalhadores,
+                semente=args.semente, probabilidade_convencimento=probabilidade,
+                percentual_influenciadores=influenciadores, peso_influenciador=peso,
+                percentual_bots=bots,
+            )
+            grade, tipos, modelo = adapters.core.preparar_inicio(config)
+            configuracoes = comparadas if modelo else [("sequencial", 1, "professor")] + comparadas
             referencia = None
             for fase, repeticoes in (("aquecimento", 1), ("medicao", args.repeticoes)):
                 for repeticao in range(1, repeticoes + 1):
@@ -147,9 +186,12 @@ def executar_experimento(args):
                             divisao="estatica" if backend in ("threads", "processos") else "",
                             linhas=linhas, colunas=colunas, geracoes_pedidas=geracoes,
                             espalhadores=espalhadores, limiar=limiar, semente=args.semente,
+                            probabilidade=probabilidade, influenciadores=influenciadores,
+                            peso_influenciador=peso, bots=bots,
                         )
                         try:
-                            resultado = _executar(grade, geracoes, limiar, backend, workers, kernel)
+                            resultado = _executar(grade, geracoes, limiar, backend, workers, kernel,
+                                                  modelo, tipos)
                             if referencia is None:
                                 referencia = resultado
                             matriz = resultado.grade_final == referencia.grade_final
@@ -177,8 +219,11 @@ def executar_experimento(args):
                         break
                 if referencia is None:
                     break
+            extras = "" if modelo is None else (
+                f", probabilidade {probabilidade}, influenciadores {influenciadores:.1%} "
+                f"(peso {peso}), bots {bots:.1%}")
             print(f"Cenário {cenario}: {linhas}x{colunas}, até {geracoes} gerações, "
-                  f"{espalhadores:.0%} espalhadores, limiar {limiar} concluído.")
+                  f"{espalhadores:.0%} espalhadores, limiar {limiar}{extras} concluído.")
     return pasta, sucesso
 
 
