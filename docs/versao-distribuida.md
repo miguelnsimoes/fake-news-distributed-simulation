@@ -97,8 +97,9 @@ TCP é um fluxo de bytes; um `recv` não corresponde necessariamente a uma mensa
 A sequência de mensagens é:
 
 ```text
-worker -> servidor: pronto (versão do protocolo, atualmente 2)
-servidor -> worker: iniciar (dimensões, limiar, kernel, halos esperados) + grade em lotes
+worker -> servidor: pronto (versão do protocolo, atualmente 3)
+servidor -> worker: iniciar (dimensões, limiar, kernel, halos esperados, linha inicial, modelo)
+                    + grade em lotes [+ mapa de tipos da faixa e do halo, se houver]
 worker -> servidor: estado da geração 0
 servidor -> worker: calcular (geração e halos)
 worker -> servidor: estado (geração, contagens, bordas e tempo de cálculo)
@@ -128,9 +129,9 @@ print(resultado.metricas)
 
 A interface automática usa loopback e uma porta livre por chamada, sem depender de terminais externos. A saída herda `Resultado`, portanto mantém configuração, histórico, gerações executadas, tempo, grade e hash. `para_dict()` acrescenta as métricas sem incluir a grade, a menos que solicitado.
 
-A distribuída está integrada aos benchmarks como o backend `distribuida` (`benchmarks/adapters.py: executar_distribuido`), separada dos processos com memória compartilhada. O executor mede o modo local automático; `executar_servidor(..., grade_inicial=grade)` permite usar a mesma grade de cada cenário. Além dos tempos, o `raw.csv` registra `caminho_critico_s`, `overhead_s` (comunicação, serialização e espera) e `celulas_halo`.
+A distribuída está integrada aos benchmarks como o backend `distribuida` (`benchmarks/adapters.py: executar_distribuido`), separada dos processos com memória compartilhada. O executor mede o modo local automático; `executar_servidor(..., grade_inicial=grade, tipos=tipos, modelo=modelo)` permite usar o mesmo estado inicial de cada cenário (o de `core.preparar_inicio`). Além dos tempos, o `raw.csv` registra `caminho_critico_s`, `overhead_s` (comunicação, serialização e espera) e `celulas_halo`.
 
-A versão 2 do protocolo acrescentou o kernel; servidor e workers de versões diferentes recusam a conexão ("Versão de protocolo incompatível").
+A versão 2 do protocolo acrescentou o kernel, e a versão 3 as extensões do modelo (`docs/extensoes-modelo.md`). Servidor e workers de versões diferentes recusam a conexão ("Versão de protocolo incompatível").
 
 ## Medições e limites de interpretação
 

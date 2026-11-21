@@ -58,6 +58,30 @@ class TestAdapters(unittest.TestCase):
         with self.assertRaises(ValueError):
             adapters.executar_distribuido(grade, 1, kernel="gpu")
 
+    def test_extensoes_equivalentes_nas_tres_versoes(self):
+        config = adapters.core.Config(
+            linhas=9, colunas=11, percentual_espalhadores=0.05, semente=3,
+            probabilidade_convencimento=0.5, percentual_influenciadores=0.1,
+            peso_influenciador=2, percentual_bots=0.03,
+        )
+        grade, tipos, modelo = adapters.core.preparar_inicio(config)
+        original = deepcopy(grade)
+        extensoes = dict(modelo=modelo, tipos=tipos)
+        esperado = adapters.executar_sequencial(grade, 12, 1, kernel="referencia", **extensoes)
+        self.assertEqual(esperado.geracoes_executadas, 12)  # bots não deixam parar
+        for resultado in (
+            adapters.executar_sequencial(grade, 12, 1, kernel="otimizado", **extensoes),
+            adapters.executar_paralelo(grade, 12, 1, workers=3, **extensoes),
+            adapters.executar_paralelo(grade, 12, 1, workers=2, backend="processos", **extensoes),
+            adapters.executar_distribuido(grade, 12, 1, workers=3, **extensoes),
+        ):
+            with self.subTest(backend=resultado.backend, kernel=resultado.kernel):
+                self.assertEqual(resultado.historico, esperado.historico)
+                self.assertEqual(resultado.grade_final, esperado.grade_final)
+        self.assertEqual(grade, original)
+        with self.assertRaises(ValueError):
+            adapters.executar_sequencial(grade, 1, kernel="professor", **extensoes)
+
     def test_parada_e_zero_geracoes_sem_alias_da_entrada(self):
         for executar in (adapters.executar_sequencial, adapters.executar_paralelo,
                          adapters.executar_distribuido):
@@ -114,7 +138,7 @@ class TestAdapters(unittest.TestCase):
                 )
             simular.assert_called_once_with(
                 grade, 4, limiar_convencimento=3, workers=1, backend="processos",
-                kernel="referencia", divisao="dinamica", pedaco=3,
+                kernel="referencia", divisao="dinamica", pedaco=3, modelo=None, tipos=None,
             )
             self.assertIsNot(simular.call_args.args[0][0], grade[0])
             self.assertEqual(resultado.tempo_externo_s, 2.0)

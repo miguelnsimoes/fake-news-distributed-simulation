@@ -48,6 +48,15 @@ class TestPlotResults(unittest.TestCase):
             for nome, dados in antes.items():
                 self.assertEqual((pasta / nome).read_bytes(), dados)
 
+    def test_titulo_descreve_extensoes(self):
+        self.assertEqual(plots._descrever_extensoes({}), "")
+        self.assertEqual(plots._descrever_extensoes(
+            dict(probabilidade="1.0", influenciadores="0.0", bots="0.0")), "")
+        texto = plots._descrever_extensoes(
+            dict(probabilidade="0.5", influenciadores="0.02", peso_influenciador="3", bots="0.0"))
+        self.assertIn("probabilidade=0.5", texto)
+        self.assertIn("peso 3", texto)
+
     def test_referencias_ausentes_e_tempos_invalidos(self):
         with tempfile.TemporaryDirectory() as temporario:
             pasta = Path(temporario)

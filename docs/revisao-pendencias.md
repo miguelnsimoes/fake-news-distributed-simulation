@@ -210,16 +210,57 @@ Dica: as medições da paralela foram em Windows com Python 3.14; se a distribu�
 
 ---
 
-## 8. Checklist resumido por ordem sugerida
+## 8. Checklist atualizado (21/11/2026)
 
-1. [ ] Preencher `requirements.txt` e definir a versão do Python; deixar a suíte 100% verde.
-2. [x] Unificar o núcleo: kernels em `common/`, paralela usando `common.core`, opção `--kernel` em todas as versões.
-3. [x] Integrar a distribuída em `adapters.py`, `run_experiments.py` e `analyze.py`, com métricas de comunicação.
-4. [ ] ~~Fazer `--espalhadores` aceitar lista~~ (feito, junto com `--limiar`); falta definir a matriz oficial de experimentos.
-5. [ ] Testar a distribuída em 2 a 4 máquinas reais; preparar o plano B de rede.
-6. [ ] Implementar 2 ou 3 extensões do modelo com aleatoriedade determinística por célula, nas três versões, com testes.
-7. [ ] (Opcional) Troca direta de halos entre workers e/ou serialização binária; medir antes e depois.
-8. [ ] Rodar todos os experimentos; gerar tabelas e gráficos; escrever a análise das três versões.
-9. [ ] Atualizar o README (estrutura, como rodar cada versão, integrantes) e consolidar as referências e a declaração de IA.
-10. [ ] Montar os slides (PDF), dividir as falas, ensaiar a demonstração ao vivo.
-11. [ ] Gerar o `.zip` final.
+As seções 1 a 7 registram a revisão de 18/11. Esta seção é a lista viva do que falta, na ordem de implementação. Já concluído: kernel comum às três versões, distribuída nos benchmarks, listas de espalhadores e limiares no executor, limpeza de comentários e as extensões do modelo (probabilidade de convencimento, influenciadores e bots, em `docs/extensoes-modelo.md`).
+
+**Sobre várias máquinas:** não é obrigatório. O enunciado pede "múltiplos processos/máquinas" e "hosts/processos distribuídos"; processos independentes conversando só por TCP na mesma máquina já atendem. Rodar em 2 máquinas é um diferencial, por isso os itens 1.4 e 1.5 são opcionais.
+
+### Fase 0: base
+
+- [ ] **0.1 `requirements.txt` e versão do Python.** Listar `matplotlib` e `Pillow` com versões (hoje o arquivo está vazio, e os testes de gráficos só passam se as bibliotecas já estiverem instaladas). Corrigir "Python 3.8+" em `docs/interface.md`: o código exige 3.9+. Sugestão: declarar 3.10+ no README.
+- [ ] **0.2 Limpar `benchmarks/results/paralelo/*.txt`:** linhas em branco duplicadas e caminho absoluto do computador de um integrante.
+- [ ] **0.3 Avisar o grupo das mudanças de interface:**
+  - `paralela.simular(config)` usa `config.kernel` (padrão `referencia`);
+  - o protocolo da distribuída está na **versão 3**, então todas as máquinas precisam da mesma versão do código;
+  - `core.preparar_inicio(config)` é o jeito de criar o estado inicial.
+- Merge `develop → main` e CI: **adiados por decisão do grupo** (o merge com a `main` entra no item 4.3).
+
+### Fase 1: código (antes das medições finais)
+
+- [x] **1.1 Kernels preparados para regras aleatórias:** geração e índice global da linha chegam ao kernel nas três versões; sorteio determinístico por (semente, geração, i, j).
+- [x] **1.2 Extensões do modelo:** probabilidade de convencimento, influenciadores e bots, com testes de semântica e de equivalência entre as versões e o documento `docs/extensoes-modelo.md`.
+  - [ ] (Opcional) Mais extensões, se der tempo: céticos/resistência e esquecimento no estilo Maki-Thompson. Cada uma pode valer até 0,5 ponto e reaproveita o sorteio e o mapa de tipos que já existem.
+- [x] **1.3 Extensões no `benchmarks/run_experiments.py`:** opções `--probabilidade`, `--influenciadores`, `--peso-influenciador` e `--bots` (listas no produto cartesiano), colunas no `raw.csv`/`summary.csv` e títulos dos gráficos. Medir o custo nas três versões fica para a Fase 2 (item 2.4).
+- [ ] **1.4 (Opcional) Otimizações da distribuída**, que também contam como melhoria: troca de halos direto entre workers, serialização binária ou sobreposição de cálculo e comunicação. Medir antes e depois.
+- [ ] **1.5 (Opcional) Várias máquinas:** repassar `--timeout` do executor à distribuída; script para medir o modo manual no formato do `raw.csv`; teste em 2 computadores com plano B de rede.
+- [ ] **1.6 Organizar a estrutura do código:**
+  - trocar os `sys.path.insert` espalhados pelos módulos por pacote (`pyproject.toml` + `pip install -e .`, ou execução com `python -m`);
+  - remover os arquivos de compatibilidade `src/parallel/regras.py` e `src/parallel/energia.py`;
+  - decidir o destino de `src/parallel/varredura.py`, segundo pipeline de benchmark: unificar com `benchmarks/` ou documentar que é só da paralela.
+
+  Fazer antes da Fase 2, porque muda os comandos de execução.
+
+### Fase 2: experimentos (com o código congelado)
+
+- [ ] **2.1 Definir a matriz oficial de experimentos** (tamanhos, gerações, espalhadores, limiar, workers, kernel) e escrevê-la no README.
+- [ ] **2.2 Completar `benchmarks/plot_results.py`:** gráfico de `speedup_vs_sequencial` (a métrica justa entre versões), speedup × tamanho da matriz, × espalhadores e × gerações.
+- [ ] **2.3 Rodar a matriz completa das três versões numa mesma máquina** (5 repetições).
+- [ ] **2.4 Medir o efeito das extensões:** curvas de ignorantes, espalhadores e inativos por geração (`benchmarks/visualize.py` ajuda) e o custo em tempo (depende do 1.3).
+- [ ] **2.5 Registrar a configuração de cada máquina:** CPU, núcleos, RAM, sistema operacional, versão do Python e rede, se houver.
+
+### Fase 3: análise e documentação
+
+- [ ] **3.1 Análise das três versões:** tabelas, speedup e eficiência, gargalos, sincronização, custo de comunicação (`overhead_s`, `celulas_halo`), Amdahl e limitações. A paralela já tem a sua em `docs/versao-paralela.md`.
+- [ ] **3.2 Documentar as demais melhorias** no mesmo formato de `docs/extensoes-modelo.md`: kernel otimizado, divisão dinâmica, protocolo com halos e lotes, achado do EcoQoS e o que vier do item 1.4.
+- [ ] **3.3 Reescrever o README:** status, árvore de pastas real, tecnologias, dependências, testes e integrantes ("A preencher").
+- [ ] **3.4 Consolidar as referências** em `docs/referencias.md`. As do modelo e das extensões já estão em `docs/extensoes-modelo.md`; falta juntar com as da paralela e da distribuída e conferir os dados de cada uma.
+- [ ] **3.5 Declaração de uso de IA**, exigida pelo enunciado.
+
+### Fase 4: entrega
+
+- [ ] **4.1 Slides em PDF (15 a 20 min)** com o conteúdo obrigatório do enunciado, incluindo uma seção para as extensões e a contribuição individual de cada integrante.
+- [ ] **4.2 Dividir as falas e ensaiar a demonstração ao vivo** (paralela e distribuída, mais uma execução com extensões); todos precisam saber explicar o código.
+- [ ] **4.3 Merge `develop → main`**, conferir o repositório no GitHub e gerar o `.zip` com instruções de execução.
+
+**Caminho crítico:** 1.6 → 2.1 → 2.3 → 3.1 → 4.1. Dá para fazer em paralelo: Fase 0, 3.4 e 3.5.

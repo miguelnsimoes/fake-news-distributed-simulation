@@ -1,7 +1,8 @@
 """Adaptadores sem impressão para medir as implementações.
 
 ``tempo_externo_s`` cobre só a chamada da implementação, sem a cópia defensiva
-da entrada nem a normalização do resultado.
+da entrada nem a normalização do resultado. ``modelo`` e ``tipos`` (de
+``core.preparar_inicio``) ligam as extensões do modelo nas três versões.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Optional, Sequence
 
 _SRC = Path(__file__).resolve().parents[1] / "src"
 for _caminho in (str(_SRC / "sequential"), str(_SRC / "parallel"), str(_SRC)):
@@ -21,12 +22,14 @@ import fake_news as sequencial  # noqa: E402  (código original do professor)
 import fake_news_paralelo as paralelo  # noqa: E402
 from common import core  # noqa: E402
 from common.kernels import KERNELS  # noqa: E402
+from common.modelo import Modelo  # noqa: E402
 from distributed import server as distribuido  # noqa: E402
 
 # "professor" é o código original (com deepcopy).
 KERNELS_SEQUENCIAIS = ("professor",) + tuple(sorted(KERNELS))
 
 Contagem = tuple[int, int, int]
+Tipos = Optional[Sequence[Sequence[int]]]
 
 
 @dataclass
@@ -79,10 +82,11 @@ def _copiar_grade(
 
 def _simular_sequencial(
     grade: list[list[int]], geracoes: int, limiar_convencimento: int,
-    kernel: str = "professor",
+    kernel: str = "professor", modelo: Modelo | None = None, tipos: Tipos = None,
 ) -> tuple[list[list[int]], list[Contagem], float]:
     if kernel != "professor":
-        final, registros, tempo = core.evoluir(grade, geracoes, limiar_convencimento, kernel)
+        final, registros, tempo = core.evoluir(grade, geracoes, limiar_convencimento, kernel,
+                                               modelo=modelo, tipos=tipos)
         historico = [(r["ignorantes"], r["espalhadores"], r["inativos"]) for r in registros]
         return final, historico, tempo
     inicio = time.perf_counter()
@@ -106,13 +110,18 @@ def executar_sequencial(
     limiar_convencimento: int = 2,
     *,
     kernel: str = "professor",
+    modelo: Modelo | None = None,
+    tipos: Tipos = None,
 ) -> ResultadoBenchmark:
-    """``"professor"`` usa o código original; os outros kernels, o núcleo comum."""
+    """``"professor"`` usa o código original, que não tem as extensões."""
     if kernel not in KERNELS_SEQUENCIAIS:
         raise ValueError(f"kernel deve ser um de {KERNELS_SEQUENCIAIS}, não {kernel!r}.")
+    if kernel == "professor" and (modelo is not None or tipos is not None):
+        raise ValueError("O código original não suporta as extensões do modelo.")
     grade = _copiar_grade(grade_inicial, geracoes)
     inicio = time.perf_counter()
-    final, historico, tempo = _simular_sequencial(grade, geracoes, limiar_convencimento, kernel)
+    final, historico, tempo = _simular_sequencial(grade, geracoes, limiar_convencimento, kernel,
+                                                  modelo, tipos)
     externo = time.perf_counter() - inicio
     return ResultadoBenchmark(
         grade_final=final, historico=historico, tempo_externo_s=externo,
@@ -131,6 +140,8 @@ def executar_paralelo(
     kernel: str = "otimizado",
     divisao: str = "estatica",
     pedaco: int | None = None,
+    modelo: Modelo | None = None,
+    tipos: Tipos = None,
 ) -> ResultadoBenchmark:
     """Com o backend de processos, chame sob ``if __name__ == "__main__":`` (spawn)."""
     grade = _copiar_grade(grade_inicial, geracoes)
@@ -138,7 +149,7 @@ def executar_paralelo(
     resultado = paralelo.simular_paralelo(
         grade, geracoes, limiar_convencimento=limiar_convencimento,
         workers=workers, backend=backend, kernel=kernel,
-        divisao=divisao, pedaco=pedaco,
+        divisao=divisao, pedaco=pedaco, modelo=modelo, tipos=tipos,
     )
     externo = time.perf_counter() - inicio
     return ResultadoBenchmark(
@@ -160,6 +171,8 @@ def executar_distribuido(
     workers: int = 2,
     kernel: str = "otimizado",
     tempo_limite: float = distribuido.TEMPO_LIMITE,
+    modelo: Modelo | None = None,
+    tipos: Tipos = None,
 ) -> ResultadoBenchmark:
     """Workers locais via TCP iniciados pelo coordenador (modo automático)."""
     grade = _copiar_grade(grade_inicial, geracoes)
@@ -170,6 +183,7 @@ def executar_distribuido(
     inicio = time.perf_counter()
     resultado = distribuido.executar_servidor(
         config, porta=0, automaticos=True, tempo_limite=tempo_limite, grade_inicial=grade,
+        tipos=tipos, modelo=modelo,
     )
     externo = time.perf_counter() - inicio
     metricas = resultado.metricas

@@ -1,7 +1,7 @@
 """Coordenador TCP: distribui faixas, encaminha halos e sincroniza gerações."""
 
 import argparse
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 import json
 import logging
 import math
@@ -13,9 +13,12 @@ import time
 from typing import List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common.argumentos import adicionar_extensoes, extensoes_de
 from common.core import (KERNEL_PADRAO, KERNELS, Config, Grade, Resultado, criar_grade,
-                         dividir_linhas, hash_grade, registro_historico, somar_contagens)
+                         dividir_linhas, hash_grade, preparar_extensoes, registro_historico,
+                         somar_contagens)
 from common.energia import desligar_economia_de_energia
+from common.modelo import Modelo
 
 if __package__:
     from .protocol import (LIMITE_MENSAGEM, decodificar_linha, enviar_grade,
@@ -25,8 +28,8 @@ else:
                           enviar_mensagem, receber_grade, receber_tipo)
 
 TEMPO_LIMITE = 30.0
-# Versão 2: "iniciar" passou a levar o kernel.
-VERSAO_PROTOCOLO = 2
+# Versão 3: "iniciar" passou a levar o modelo, a linha inicial e os tipos.
+VERSAO_PROTOCOLO = 3
 
 
 @dataclass
@@ -122,18 +125,28 @@ def validar_grade(grade: Grade, config: Config) -> List[List[int]]:
 
 def executar_servidor(config: Config, host: str = "127.0.0.1", porta: int = 5000,
                       *, automaticos: bool = False, tempo_limite: float = TEMPO_LIMITE,
-                      grade_inicial: Optional[Grade] = None) -> ResultadoDistribuido:
+                      grade_inicial: Optional[Grade] = None, tipos: Optional[Grade] = None,
+                      modelo: Optional[Modelo] = None) -> ResultadoDistribuido:
     """Executa uma simulação; no modo manual, aguarda num_processos workers.
 
     ``tempo_s`` mede o laço de gerações (com TCP e barreira); o restante fica em
-    ``metricas``. Com ``grade_inicial``, percentual e semente de config são ignorados.
+    ``metricas``. Com ``grade_inicial``, o estado inicial vem pronto do chamador
+    (com ``tipos`` e ``modelo``, como em ``core.preparar_inicio``) e os campos de
+    config sobre espalhadores, semente e extensões são ignorados.
     """
     validar_config(config, porta, tempo_limite)
     if grade_inicial is None:
+        if tipos is not None or modelo is not None:
+            raise ValueError("tipos e modelo só valem junto com grade_inicial.")
         grade = criar_grade(config.linhas, config.colunas, config.percentual_espalhadores,
                             config.semente)
+        tipos, modelo = preparar_extensoes(config, grade)
     else:
         grade = validar_grade(grade_inicial, config)
+        if tipos is not None:
+            if modelo is None:
+                raise ValueError("tipos exige um modelo.")
+            tipos = validar_grade(tipos, config)
     metricas = {
         "inicializacao_s": 0.0, "finalizacao_s": 0.0, "total_s": 0.0,
         "envio_coordenador_s": 0.0, "recepcao_espera_coordenador_s": 0.0,
@@ -172,13 +185,21 @@ def executar_servidor(config: Config, host: str = "127.0.0.1", porta: int = 5000
                 conexao.settimeout(tempo_limite)
 
             for conexao, faixa in zip(conexoes, faixas):
+                tem_acima = bool(faixa) and faixa.start > 0
+                tem_abaixo = bool(faixa) and faixa.stop < config.linhas
                 enviar_mensagem(conexao, {
                     "tipo": "iniciar", "linhas": len(faixa), "colunas": config.colunas,
                     "limiar": config.limiar_convencimento, "kernel": config.kernel,
-                    "tem_acima": bool(faixa) and faixa.start > 0,
-                    "tem_abaixo": bool(faixa) and faixa.stop < config.linhas,
+                    "tem_acima": tem_acima, "tem_abaixo": tem_abaixo,
+                    "linha_inicial": faixa.start,
+                    "modelo": None if modelo is None else asdict(modelo),
+                    "tem_tipos": tipos is not None,
                 })
                 enviar_grade(conexao, grade[faixa.start:faixa.stop], config.colunas)
+                if tipos is not None:
+                    # Os tipos são fixos: vão uma vez, já com as linhas do halo.
+                    enviar_grade(conexao, tipos[faixa.start - tem_acima:faixa.stop + tem_abaixo],
+                                 config.colunas)
                 estados.append(receber_estado(conexao, 0, len(faixa), config.colunas))
             metricas["inicializacao_s"] = time.perf_counter() - inicio_total
 
@@ -242,13 +263,15 @@ def main() -> int:
     parser.add_argument("-s", "--semente", type=int, default=42)
     parser.add_argument("--kernel", choices=sorted(KERNELS), default=KERNEL_PADRAO,
                         help="Cálculo de cada linha (common/kernels.py), repassado aos workers.")
+    adicionar_extensoes(parser)
     parser.add_argument("--saida", type=Path)
     parser.add_argument("--incluir-grade", action="store_true")
     parser.add_argument("--silencioso", action="store_true")
     args = parser.parse_args()
     config = Config(linhas=args.linhas, colunas=args.colunas, geracoes=args.geracoes,
                     percentual_espalhadores=args.percentual, limiar_convencimento=args.limiar,
-                    semente=args.semente, num_processos=args.workers, kernel=args.kernel)
+                    semente=args.semente, num_processos=args.workers, kernel=args.kernel,
+                    **extensoes_de(args))
     logging.basicConfig(level=logging.WARNING if args.silencioso else logging.INFO, format="%(message)s")
     desligar_economia_de_energia()
     try:

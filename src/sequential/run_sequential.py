@@ -19,6 +19,7 @@ from common.core import (
     KERNEL_PADRAO, KERNELS, Config, Grade, IGNORANTE, ESPALHADOR, INATIVO,
     contar_estados, simular,
 )
+from common.argumentos import adicionar_extensoes, extensoes_de
 
 SIMBOLOS = {IGNORANTE: ".", ESPALHADOR: "E", INATIVO: "N"}
 
@@ -50,6 +51,7 @@ def ler_argumentos() -> argparse.Namespace:
                    help="caminho de um arquivo JSON para salvar o resultado")
     p.add_argument("--incluir-grade", action="store_true",
                    help="inclui a grade final no JSON (arquivo grande!)")
+    adicionar_extensoes(p)
     return p.parse_args()
 
 
@@ -63,6 +65,7 @@ def main() -> None:
         limiar_convencimento=a.limiar,
         semente=a.semente,
         kernel=a.kernel,
+        **extensoes_de(a),
     )
 
     total = config.linhas * config.colunas
@@ -73,6 +76,9 @@ def main() -> None:
         print(f"Percentual inicial de espalhadores: {config.percentual_espalhadores * 100:.2f}%")
         print(f"Limiar de convencimento: {config.limiar_convencimento} vizinhos")
         print(f"Kernel: {config.kernel}")
+        print(f"Extensões: probabilidade {config.probabilidade_convencimento} | "
+              f"influenciadores {config.percentual_influenciadores:.2%} "
+              f"(peso {config.peso_influenciador}) | bots {config.percentual_bots:.2%}")
         print()
 
     def gancho(geracao, grade, contagem):
@@ -85,7 +91,10 @@ def main() -> None:
         if a.mostrar_grade:
             imprimir_grade(grade)
 
-    resultado = simular(config, ao_final_de_geracao=None if a.silencioso and not a.mostrar_grade else gancho)
+    try:
+        resultado = simular(config, ao_final_de_geracao=None if a.silencioso and not a.mostrar_grade else gancho)
+    except ValueError as erro:
+        raise SystemExit(f"Erro: {erro}") from None
 
     if not a.silencioso:
         if resultado.geracoes_executadas < config.geracoes:

@@ -190,7 +190,7 @@ class TestSimulacaoDistribuida(unittest.TestCase):
 
             thread = threading.Thread(target=executar, daemon=True)
             thread.start()
-            self.assertEqual(protocol.receber_tipo(servidor, "pronto")["protocolo"], 2)
+            self.assertEqual(protocol.receber_tipo(servidor, "pronto")["protocolo"], 3)
             protocol.enviar_mensagem(servidor, {
                 "tipo": "iniciar", "linhas": 1, "colunas": 3, "limiar": 1, "kernel": "gpu",
                 "tem_acima": False, "tem_abaixo": False,

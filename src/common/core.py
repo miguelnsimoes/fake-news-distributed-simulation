@@ -11,12 +11,15 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from .estados import ESPALHADOR, IGNORANTE, INATIVO
 from .kernels import KERNEL_PADRAO, KERNELS, Kernel, obter_kernel
+from .modelo import (PESO_INFLUENCIADOR_PADRAO, Modelo, aplicar_bots, criar_modelo, criar_tipos,
+                     obter_kernel_estendido)
 
 __all__ = [
     "IGNORANTE", "ESPALHADOR", "INATIVO", "KERNELS", "KERNEL_PADRAO", "Grade",
     "Config", "Resultado", "criar_grade", "calcular_faixa", "proxima_geracao",
     "contar_estados", "somar_contagens", "registro_historico", "hash_grade",
     "dividir_linhas", "simular", "calcular_linhas", "contar_linhas", "evoluir",
+    "Modelo", "preparar_extensoes", "preparar_inicio",
 ]
 
 # Formato interno: uma linha em bytes (1 byte por pessoa), o mesmo dos kernels.
@@ -34,6 +37,11 @@ class Config:
     limiar_convencimento: int = 3
     semente: int = 42
     kernel: str = KERNEL_PADRAO
+    # Extensões do modelo (docs/extensoes-modelo.md); os padrões reproduzem o original.
+    probabilidade_convencimento: float = 1.0
+    percentual_influenciadores: float = 0.0
+    peso_influenciador: int = PESO_INFLUENCIADOR_PADRAO
+    percentual_bots: float = 0.0
     # Ignorados pela versão sequencial.
     num_threads: int = 1
     num_processos: int = 1
@@ -83,6 +91,25 @@ def criar_grade(linhas: int, colunas: int,
     return grade
 
 
+def preparar_extensoes(config: Config, grade: Grade
+                       ) -> Tuple[Optional[Grade], Optional[Modelo]]:
+    """(tipos, modelo) de config; põe os bots da ``grade`` como espalhadores."""
+    modelo = criar_modelo(config.probabilidade_convencimento, config.percentual_influenciadores,
+                          config.peso_influenciador, config.percentual_bots, config.semente)
+    tipos = criar_tipos(config.linhas, config.colunas, config.percentual_influenciadores,
+                        config.percentual_bots, config.semente)
+    aplicar_bots(grade, tipos)
+    return tipos, modelo
+
+
+def preparar_inicio(config: Config) -> Tuple[Grade, Optional[Grade], Optional[Modelo]]:
+    """Estado inicial comum às três versões: (grade, tipos, modelo)."""
+    grade = criar_grade(config.linhas, config.colunas,
+                        config.percentual_espalhadores, config.semente)
+    tipos, modelo = preparar_extensoes(config, grade)
+    return grade, tipos, modelo
+
+
 def calcular_faixa(grade: Grade, linha_ini: int, linha_fim: int,
                    limiar_convencimento: int,
                    kernel: Union[str, Kernel] = KERNEL_PADRAO) -> Grade:
@@ -102,19 +129,37 @@ def calcular_faixa(grade: Grade, linha_ini: int, linha_fim: int,
 
 def calcular_linhas(linhas: Sequence[bytes], linha_ini: int, linha_fim: int,
                     limiar_convencimento: int,
-                    kernel: Union[str, Kernel] = KERNEL_PADRAO) -> Linhas:
-    """``calcular_faixa`` no formato interno, sem conversões."""
-    calcular = obter_kernel(kernel)
+                    kernel: Union[str, Kernel] = KERNEL_PADRAO, *,
+                    modelo: Optional[Modelo] = None,
+                    tipos: Optional[Sequence[bytes]] = None,
+                    geracao: int = 0, indice_global: int = 0) -> Linhas:
+    """``calcular_faixa`` no formato interno, sem conversões.
+
+    Com ``modelo``: ``tipos`` fica alinhado a ``linhas``, ``geracao`` é a
+    geração sendo calculada e ``indice_global`` é a linha da matriz que
+    corresponde a ``linhas[0]`` (os sorteios dependem dessas posições).
+    """
     total = len(linhas)
     novas: Linhas = []
     if linha_ini >= linha_fim:
         return novas
 
+    if modelo is None:
+        calcular = obter_kernel(kernel)
+    else:
+        calcular_estendido = obter_kernel_estendido(kernel)
+
     acima = linhas[linha_ini - 1] if linha_ini > 0 else None
     atual = linhas[linha_ini]
     for i in range(linha_ini, linha_fim):
         abaixo = linhas[i + 1] if i + 1 < total else None
-        novas.append(calcular(acima, atual, abaixo, limiar_convencimento))
+        if modelo is None:
+            novas.append(calcular(acima, atual, abaixo, limiar_convencimento))
+        else:
+            trio = None if tipos is None else (
+                tipos[i - 1] if i > 0 else None, tipos[i], tipos[i + 1] if i + 1 < total else None)
+            novas.append(calcular_estendido(acima, atual, abaixo, limiar_convencimento,
+                                            trio, modelo, geracao, indice_global + i))
         acima, atual = atual, abaixo
 
     return novas
@@ -184,10 +229,10 @@ def simular(config: Config,
             ao_final_de_geracao: Optional[Callable[[int, Grade, Dict[int, int]], None]] = None
             ) -> Resultado:
     """Simulação sequencial; o gancho entra no tempo medido (não use em benchmarks)."""
-    grade = criar_grade(config.linhas, config.colunas,
-                        config.percentual_espalhadores, config.semente)
+    grade, tipos, modelo = preparar_inicio(config)
     grade, historico, tempo = evoluir(grade, config.geracoes, config.limiar_convencimento,
-                                      config.kernel, ao_final_de_geracao)
+                                      config.kernel, ao_final_de_geracao,
+                                      modelo=modelo, tipos=tipos)
     return Resultado(
         versao="sequencial",
         config=config,
@@ -201,7 +246,8 @@ def simular(config: Config,
 
 def evoluir(grade: Grade, geracoes: int, limiar_convencimento: int,
             kernel: Union[str, Kernel] = KERNEL_PADRAO,
-            ao_final_de_geracao: Optional[Callable[[int, Grade, Dict[int, int]], None]] = None
+            ao_final_de_geracao: Optional[Callable[[int, Grade, Dict[int, int]], None]] = None,
+            *, modelo: Optional[Modelo] = None, tipos: Optional[Grade] = None,
             ) -> Tuple[Grade, List[Dict[str, int]], float]:
     """Laço de gerações a partir de uma grade pronta: (grade_final, historico, tempo_s).
 
@@ -209,12 +255,14 @@ def evoluir(grade: Grade, geracoes: int, limiar_convencimento: int,
     """
     calcular = obter_kernel(kernel)
     linhas: Linhas = [bytes(linha) for linha in grade]
+    linhas_tipos = None if tipos is None else [bytes(linha) for linha in tipos]
     historico: List[Dict[str, int]] = []
 
     inicio = time.perf_counter()
 
     for geracao in range(1, geracoes + 1):
-        linhas = calcular_linhas(linhas, 0, len(linhas), limiar_convencimento, calcular)
+        linhas = calcular_linhas(linhas, 0, len(linhas), limiar_convencimento, calcular,
+                                 modelo=modelo, tipos=linhas_tipos, geracao=geracao)
         contagem = contar_linhas(linhas)
         historico.append(registro_historico(geracao, contagem))
 
