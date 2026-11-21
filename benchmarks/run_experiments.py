@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import ctypes
 import itertools
 import json
 import multiprocessing
@@ -44,6 +45,42 @@ CAMPOS = [
 ]
 BACKENDS = ("threads", "processos", "distribuida")
 KERNELS = tuple(k for k in adapters.KERNELS_SEQUENCIAIS if k != "professor")
+
+
+def _modelo_cpu():
+    """Obtém uma identificação legível sem dependências externas."""
+    if os.name == "nt":
+        try:
+            import winreg
+            caminho = r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, caminho) as chave:
+                return winreg.QueryValueEx(chave, "ProcessorNameString")[0].strip()
+        except OSError:
+            pass
+    return (platform.processor() or os.environ.get("PROCESSOR_IDENTIFIER")
+            or platform.machine() or "não identificado").strip()
+
+
+def _memoria_total_bytes():
+    """Retorna a RAM física total no Windows/POSIX ou ``None`` se indisponível."""
+    if os.name == "nt":
+        class EstadoMemoria(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+            ]
+        estado = EstadoMemoria()
+        estado.dwLength = ctypes.sizeof(estado)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(estado)):
+            return int(estado.ullTotalPhys)
+        return None
+    try:
+        return int(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES"))
+    except (AttributeError, OSError, ValueError):
+        return None
 
 
 def argumentos(argv=None):
@@ -136,7 +173,8 @@ def executar_experimento(args):
     metadata = {
         "experimento": identificador, "inicio_utc": datetime.now(timezone.utc).isoformat(),
         "python": sys.version, "executavel": sys.executable,
-        "plataforma": platform.platform(), "cpus_logicas": os.cpu_count(),
+        "plataforma": platform.platform(), "modelo_cpu": _modelo_cpu(),
+        "cpus_logicas": os.cpu_count(), "memoria_ram_bytes": _memoria_total_bytes(),
         "gil_ativo": adapters.paralelo.gil_ativo(),
         "configuracao": {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
         "kernel": args.kernel, "divisao_paralela": "estatica",

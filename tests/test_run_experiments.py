@@ -2,6 +2,7 @@
 
 import csv
 import io
+import json
 import sys
 import tempfile
 import unittest
@@ -54,6 +55,9 @@ class TestRunExperiments(unittest.TestCase):
                 outra, _ = runner.executar_experimento(args)
             self.assertNotEqual(pasta, outra)
             self.assertTrue((pasta / "metadata.json").exists())
+            metadata = json.loads((pasta / "metadata.json").read_text(encoding="utf-8"))
+            self.assertTrue(metadata["modelo_cpu"])
+            self.assertIn("memoria_ram_bytes", metadata)
 
     def test_registra_divergencia_e_erro(self):
         referencia = runner.adapters.executar_sequencial([[0]], 0)

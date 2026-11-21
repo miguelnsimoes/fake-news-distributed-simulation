@@ -17,7 +17,8 @@ def registro(**opcoes):
                  geracoes_pedidas="4", espalhadores="0.1", limiar="1", semente="42",
                  implementacao="paralela", backend="threads", kernel="otimizado",
                  divisao="estatica", workers="1", repeticoes_validas="2",
-                 mediana_tempo_externo_s="0.001", speedup_escalabilidade="1",
+                 mediana_tempo_externo_s="0.001", speedup_vs_sequencial="1",
+                 speedup_escalabilidade="1",
                  eficiencia_escalabilidade="1")
     linha.update(opcoes)
     return linha
@@ -40,7 +41,7 @@ class TestPlotResults(unittest.TestCase):
                 (pasta / nome).write_text("preservar", encoding="utf-8")
             antes = {p.name: p.read_bytes() for p in pasta.iterdir()}
             arquivos = plots.gerar_graficos(pasta)
-            self.assertEqual(len(arquivos), 6)
+            self.assertEqual(len(arquivos), 8)
             for arquivo in arquivos:
                 self.assertEqual(arquivo.parent, pasta / "figures")
                 self.assertTrue(arquivo.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
@@ -61,11 +62,12 @@ class TestPlotResults(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporario:
             pasta = Path(temporario)
             gravar(pasta, [registro(workers="2", mediana_tempo_externo_s="nan",
+                                   speedup_vs_sequencial="",
                                    speedup_escalabilidade="", eficiencia_escalabilidade="")])
             cenario, = plots.ler_cenarios(pasta / "summary.csv").values()
             for metrica in plots.METRICAS:
                 self.assertTrue(math.isnan(cenario[0][metrica]))
-            self.assertEqual(len(plots.gerar_graficos(pasta)), 3)
+            self.assertEqual(len(plots.gerar_graficos(pasta)), 4)
         for valor in ("", "abc", "inf", "nan", "0", "-1"):
             self.assertTrue(math.isnan(plots.numero(valor)))
 

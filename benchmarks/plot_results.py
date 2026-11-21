@@ -20,7 +20,8 @@ from matplotlib.ticker import PercentFormatter
 CENARIO = ("experimento", "cenario", "linhas", "colunas", "geracoes_pedidas",
            "espalhadores", "limiar", "semente")
 SERIE = ("implementacao", "backend", "kernel", "divisao")
-METRICAS = ("mediana_tempo_externo_s", "speedup_escalabilidade", "eficiencia_escalabilidade")
+METRICAS = ("mediana_tempo_externo_s", "speedup_vs_sequencial",
+            "speedup_escalabilidade", "eficiencia_escalabilidade")
 OBRIGATORIOS = set(CENARIO + SERIE + METRICAS + ("workers", "repeticoes_validas"))
 
 
@@ -127,6 +128,7 @@ def gerar_graficos(experimento):
             if registro["implementacao"] != "sequencial":
                 series[tuple(registro[c] for c in SERIE)].append(registro)
         for metrica, nome, unidade in (
+            ("speedup_vs_sequencial", "speedup_sequencial", "Speedup contra a sequencial (x)"),
             ("speedup_escalabilidade", "speedup", "Speedup de escalabilidade (×)"),
             ("eficiencia_escalabilidade", "eficiencia", "Eficiência de escalabilidade (%)"),
         ):

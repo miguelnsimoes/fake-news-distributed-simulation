@@ -30,7 +30,8 @@ python src/sequential/run_sequential.py --silencioso --saida seq.json    # bench
 python -m unittest discover -s tests -v                                  # testes
 ```
 
-Só usa a biblioteca padrão (Python 3.8+).
+O núcleo da simulação usa apenas a biblioteca padrão. O projeto requer Python
+3.10+; gráficos e visualizações usam as dependências de `requirements.txt`.
 
 ## Como importar o núcleo nas outras versões
 

@@ -1,119 +1,182 @@
 # Fake News Distributed Simulation
 
-Projeto acadêmico da disciplina de **Sistemas Distribuídos**, desenvolvido em Python para simular a propagação de fake news em uma matriz bidimensional. Cada célula representa uma pessoa, cujo estado evolui ao longo das gerações conforme a vizinhança.
+Trabalho acadêmico de Sistemas Paralelos e Distribuídos que simula a propagação de fake news em uma população representada por uma matriz bidimensional. O projeto compara implementações sequencial, paralela e distribuída, preservando o mesmo comportamento lógico entre todas elas.
 
-**Status: em desenvolvimento.** Esta etapa prepara a estrutura do repositório e mantém a implementação sequencial fornecida pelo professor. As versões paralela e distribuída, os testes automatizados e os benchmarks serão desenvolvidos posteriormente.
+**Status:** implementação concluída e validada por testes automatizados. Os resultados versionados identificam o ambiente em que foram medidos; novos resultados devem ser obtidos novamente quando o hardware ou o interpretador mudar.
 
-## Objetivo acadêmico
+## Modelo computacional
 
-Comparar as abordagens sequencial, paralela e distribuída para a mesma simulação, estudando divisão de trabalho, comunicação entre processos e desempenho. As implementações futuras deverão preservar as regras da versão sequencial para permitir uma comparação consistente.
+Cada célula representa uma pessoa e assume um dos estados abaixo:
 
-## Estados da simulação
-
-| Código | Estado | Descrição |
+| Código | Estado | Comportamento |
 | --- | --- | --- |
-| `0` | Ignorante | Ainda não recebeu ou não acredita na informação. |
+| `0` | Ignorante | Ainda não acredita ou não recebeu a informação. |
 | `1` | Espalhador | Acredita e compartilha a informação. |
 | `2` | Inativo | Recebeu a informação, mas não a compartilha mais. |
 
-Na implementação fornecida, um ignorante se torna espalhador quando possui pelo menos o número configurado de vizinhos espalhadores. Um espalhador se torna inativo na geração seguinte, e um inativo permanece inativo. A vizinhança considera até oito células ao redor de cada pessoa, respeitando os limites da matriz. Cada nova geração é calculada a partir da grade anterior.
+A propagação usa a vizinhança de Moore, com até oito vizinhos. Em cada geração, um ignorante torna-se espalhador ao atingir o limiar configurado, um espalhador torna-se inativo e um inativo permanece inativo. A próxima geração é sempre calculada a partir de uma grade imutável da geração anterior, evitando resultados dependentes da ordem de percurso.
 
 ## Implementações
 
-| Implementação | Situação | Descrição |
-| --- | --- | --- |
-| Sequencial | Disponível | Código original do professor, preservado integralmente em `src/sequential/fake_news.py`. |
-| Paralela | Disponível | Blocos de linhas divididos entre `threading` ou `multiprocessing`, com buffer duplo e uma barreira por geração. Detalhes em [`docs/versao-paralela.md`](docs/versao-paralela.md). |
-| Distribuída | Disponível | Faixas de linhas distribuídas a workers TCP, com troca de halos e uma barreira por geração. Detalhes em [`docs/versao-distribuida.md`](docs/versao-distribuida.md). |
+| Versão | Estratégia |
+| --- | --- |
+| Sequencial | Código original do professor preservado em `src/sequential/fake_news.py` e núcleo comum para comparações controladas. |
+| Paralela | Divisão explícita das linhas entre threads ou processos, buffer duplo e barreira por geração. |
+| Distribuída | Coordenador e workers TCP, blocos de linhas locais, troca apenas dos halos e barreira coordenada por geração. |
 
-As três versões aceitam as extensões do modelo (probabilidade de convencimento, influenciadores e bots), descritas e justificadas em [`docs/extensoes-modelo.md`](docs/extensoes-modelo.md).
+As versões usam os mesmos kernels de referência e otimizado. Testes comparam matriz final, histórico, número de gerações e hash para garantir equivalência.
 
-As três versões usam o mesmo kernel de cálculo (`src/common/kernels.py`, opção `--kernel referencia|otimizado`), para que as comparações de desempenho meçam só o paralelismo/distribuição.
+## Melhorias e extensões
 
-## Comparar as três versões
+- Probabilidade de convencimento, com sorteio determinístico por célula e geração.
+- Influenciadores com peso configurável.
+- Bots que permanecem espalhadores.
+- Kernel comum otimizado.
+- Divisão estática e dinâmica na versão paralela.
+- Redução da comunicação distribuída por troca de halos, sem retransmitir a matriz completa a cada geração.
+- Protocolo TCP com JSON, prefixo de tamanho, lotes, validações e timeouts.
+- Visualização da propagação e métricas de tempo, speedup, eficiência e comunicação.
 
-```sh
-python benchmarks/run_experiments.py --piloto
-python benchmarks/run_experiments.py --linhas 500 1000 --colunas 500 1000 --geracoes 30 \
-    --espalhadores 0.01 0.02 0.05 --limiar 2 --workers 1 2 4 8 --kernel otimizado
-python benchmarks/analyze.py benchmarks/results/<experimento>
+Os detalhes e a fundamentação das extensões estão em [docs/extensoes-modelo.md](docs/extensoes-modelo.md).
+
+## Requisitos e instalação
+
+- Python 3.10 ou superior.
+- A simulação usa apenas a biblioteca padrão.
+- `matplotlib` e `Pillow` são usados para gráficos, GIFs e seus testes.
+
+No Windows PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 ```
 
-Cada cenário roda o código original do professor (referência de correção), a sequencial do núcleo com o mesmo kernel (base do speedup), `threads`, `processos` e `distribuida`. As extensões do modelo também podem variar nos cenários (`--probabilidade`, `--influenciadores`, `--peso-influenciador`, `--bots`). O `summary.csv` traz `speedup_vs_sequencial` (mesmo kernel), `speedup_escalabilidade` (mesma versão com 1 worker), `ganho_vs_sequencial` (contra o código original) e `mediana_overhead_s` (sincronização/comunicação).
+No Linux/macOS:
 
-## Tecnologias
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements.txt
+```
 
-- **Atuais:** Python 3 e biblioteca padrão (`random`, `time` e `copy`); Git e GitHub para versionamento e colaboração.
-- **Planejadas:** `threading` ou `multiprocessing` para paralelismo e `socket` para comunicação distribuída, priorizando a biblioteca padrão.
+## Como executar
 
-O código sequencial não exige pacotes externos. O arquivo `requirements.txt` permanece vazio nesta etapa.
+### Sequencial
 
-## Estrutura de diretórios
+```powershell
+python src/sequential/fake_news.py
+python src/sequential/run_sequential.py -l 300 -c 300 -g 30 -p 0.02 -t 2
+```
+
+O primeiro comando executa o código original fornecido pelo professor. O segundo usa a interface comum configurável.
+
+### Paralela
+
+```powershell
+python src/parallel/fake_news_paralelo.py --backend threads --workers 4 --linhas 300 --colunas 300 --geracoes 30
+python src/parallel/fake_news_paralelo.py --backend processos --workers 4 --linhas 300 --colunas 300 --geracoes 30
+```
+
+### Distribuída automática, em uma máquina
+
+```powershell
+python src/distributed/server.py --automaticos --workers 4 --port 0 -l 300 -c 300 -g 30 -p 0.02 -t 2
+```
+
+O coordenador abre uma porta TCP livre e inicia os workers locais. Eles continuam sendo processos independentes que se comunicam exclusivamente por sockets.
+
+### Distribuída manual, em terminais separados
+
+Terminal do servidor:
+
+```powershell
+python src/distributed/server.py --host 0.0.0.0 --port 5000 --workers 2 -l 300 -c 300 -g 30 -p 0.02 -t 2
+```
+
+Em cada um dos dois terminais de worker:
+
+```powershell
+python src/distributed/worker.py --host 127.0.0.1 --port 5000
+```
+
+Para computadores diferentes, substitua `127.0.0.1` pelo IPv4 do servidor, permita conexões TCP à porta no firewall e use a mesma revisão do código em todas as máquinas. O protocolo atual é a versão 3 e rejeita workers incompatíveis.
+
+## Testes
+
+```powershell
+python -B -m unittest discover -s tests -v
+```
+
+A suíte cobre regras, kernels, extensões, equivalência das três versões, fragmentação TCP, mensagens grandes em lotes, falhas de worker, benchmarks e geração de imagens.
+
+## Experimentos e gráficos
+
+Teste rápido do pipeline:
+
+```powershell
+python benchmarks/run_experiments.py --piloto
+```
+
+Matriz recomendada para uma medição final:
+
+```powershell
+python benchmarks/run_experiments.py --linhas 500 --colunas 500 --geracoes 30 --espalhadores 0.01 0.02 0.05 --limiar 2 --workers 1 2 4 8 --kernel otimizado --repeticoes 5
+python benchmarks/analyze.py benchmarks/results/<experimento>
+python benchmarks/plot_results.py benchmarks/results/<experimento>
+```
+
+Cada cenário usa a mesma grade inicial nas versões comparadas. `raw.csv` contém as medições, `summary.csv` traz medianas, speedup e eficiência, `metadata.json` registra o ambiente, e `figures/` contém os gráficos. Aquecimentos ficam separados em `warmup.csv` e não entram nas estatísticas.
+
+O speedup principal é calculado contra a versão sequencial com o mesmo kernel. O ganho contra o código original do professor aparece separadamente para não misturar otimização algorítmica com paralelismo.
+
+## Estrutura
 
 ```text
 fake-news-distributed-simulation/
-├── src/
-│   ├── sequential/
-│   │   └── fake_news.py
-│   ├── parallel/
-│   │   ├── fake_news_paralelo.py
-│   │   ├── regras.py
-│   │   └── varredura.py
-│   ├── distributed/
-│   │   └── .gitkeep
-│   └── common/
-│       └── .gitkeep
-├── tests/
-│   └── .gitkeep
-├── benchmarks/
-│   └── results/
-│       └── .gitkeep
-├── docs/
-│   └── .gitkeep
-├── README.md
-├── .gitignore
-└── requirements.txt
+|-- src/
+|   |-- common/          # configuração, estados, kernels e extensões
+|   |-- sequential/      # original do professor e adaptador sequencial
+|   |-- parallel/        # threads e multiprocessing
+|   `-- distributed/     # coordenador, workers e protocolo TCP
+|-- tests/               # testes automatizados
+|-- benchmarks/          # execução, análise, gráficos e visualização
+|   `-- results/         # resultados identificados por experimento
+|-- docs/                # projeto, referências, análise e apresentação
+|-- README.md
+|-- requirements.txt
+`-- .gitignore
 ```
 
-As pastas `parallel`, `distributed` e `common` ficam reservadas para as próximas etapas. `tests` receberá testes automatizados; `benchmarks/results`, resultados das comparações de desempenho; e `docs`, documentação complementar. Os arquivos `.gitkeep` permitem versionar as pastas ainda vazias.
+## Documentação
 
-## Executar a versão sequencial
+- [Versão paralela](docs/versao-paralela.md)
+- [Versão distribuída](docs/versao-distribuida.md)
+- [Extensões do modelo](docs/extensoes-modelo.md)
+- [Referências e uso de IA](docs/referencias.md)
+- [Checklist de entrega](docs/checklist-entrega.md)
+- [Roteiro da apresentação](docs/apresentacao.md)
 
-É necessário ter Python 3 instalado e disponível no terminal. Na raiz do repositório, execute:
+## Integrantes e contribuições
 
-```sh
-python --version
-python src/sequential/fake_news.py
-```
+Preencher estes dados antes de exportar a apresentação final:
 
-Em ambientes onde o interpretador é chamado de `python3`, substitua `python` por `python3` nos comandos.
-
-O script executa com os parâmetros originais definidos no bloco `if __name__ == "__main__"`: matriz de 100 × 100, limite de 50 gerações, percentual inicial de espalhadores de 5%, limiar de convencimento de três vizinhos e exibição da grade desativada. A simulação pode terminar antes do limite de gerações caso não existam mais espalhadores. As estatísticas por geração, os totais finais e o tempo de execução são exibidos no terminal.
-
-Não é necessário instalar dependências ou criar um ambiente virtual para executar esta versão.
-
-## Executar a versão paralela
-
-Também só usa a biblioteca padrão. Na raiz do repositório:
-
-```sh
-python src/parallel/fake_news_paralelo.py --workers 4 --backend threads
-python src/parallel/fake_news_paralelo.py --workers 8 --backend processos --linhas 1000 --colunas 1000 --limiar 2
-python src/parallel/varredura.py --workers 1 2 4 8 --backend threads processos --sequencial
-python -m unittest discover -s tests -v
-```
-
-Sem opções, `fake_news_paralelo.py` usa os mesmos parâmetros do código do professor. `varredura.py` mede speedup e eficiência para cada número de workers e confere se o resultado é idêntico ao sequencial. As opções e o desenho da solução estão em [`docs/versao-paralela.md`](docs/versao-paralela.md).
-
-## Integrantes
-
-| Integrante | Nome |
+| Integrante | Contribuição principal |
 | --- | --- |
-| 1 | A preencher |
-| 2 | A preencher |
-| 3 | A preencher |
-| 4 | A preencher |
+| Miguel | Versão distribuída com sockets TCP. |
+| `[nome]` | Versão sequencial e núcleo comum. |
+| `[nome]` | Versão paralela. |
+| `[nome]` | Benchmarks, análise e visualização. |
 
-## Colaboração
+## Limitações
 
-O desenvolvimento será organizado no GitHub com branches de funcionalidades e Pull Requests para revisão das contribuições. As próximas etapas incluem as implementações paralela e distribuída, os testes automatizados e os benchmarks, cada uma em sua branch específica.
+- Os benchmarks distribuídos automáticos usam processos locais via loopback; uma execução em rede física deve ser identificada separadamente.
+- O coordenador centraliza a troca de halos e pode se tornar gargalo.
+- Não há autenticação, criptografia, reconexão nem tolerância a falhas, pois o protocolo foi criado para um ambiente acadêmico controlado.
+- No CPython tradicional, o GIL limita o ganho das threads em código Python puro; `multiprocessing` permite paralelismo real.
+- Os parâmetros das extensões são ilustrativos e não foram calibrados com dados reais.
+
+## Uso acadêmico
+
+O projeto foi desenvolvido colaborativamente com GitHub, branches e Pull Requests. Ferramentas de IA generativa foram utilizadas como apoio à organização, revisão, documentação, implementação e testes. Todo conteúdo permaneceu sob revisão do grupo; medições são produzidas pelos scripts do repositório. A declaração detalhada e as referências estão em [docs/referencias.md](docs/referencias.md).
