@@ -65,29 +65,37 @@ Worker 0 [linhas 0..n] <-- halos --> Coordenador <-- halos --> Worker 1 [linhas 
 
 ## Slide 9 — Metodologia experimental (1 min)
 
-- Mesmos cenários nas três versões.
-- Variáveis: tamanho, gerações, percentual inicial e workers.
+- Mesmos cenários para sequencial, paralela (threads e processos) e distribuída.
+- Tamanhos de 200×200, 350×350 e 500×500 na rodada de tamanho. As rodadas de gerações e espalhadores usam 400×400.
+- Limites de 10, 30 e 60 gerações, frações iniciais de 1%, 2% e 5% e configurações com 1, 2, 4 e 8 threads ou processos. A rodada de escalabilidade em 500×500 inclui as quatro quantidades de workers.
 - Aquecimento separado e cinco repetições; análise pela mediana.
-- Speedup contra a sequencial com o mesmo kernel.
-- Informar CPU, núcleos, RAM, SO, Python e ambiente a partir do `metadata.json`.
+- Speedup contra a sequencial com o mesmo kernel, usando a mediana do tempo externo. Eficiência contra essa referência = speedup ÷ workers.
+- Ambiente das rodadas comparativas: Intel Core 5 210H, 8 núcleos físicos e 12 CPUs lógicas, 15,63 GiB de RAM detectada, Windows 11 e CPython 3.12.1 com GIL. A distribuída usa processos TCP locais em um único computador.
+- As sete pastas de experimento em [resultados finais](../benchmarks/results/final/) reúnem 18 cenários em cinco séries, incluindo oito cenários de extensões. As 715 medições passaram na comparação da matriz final e do histórico de gerações.
 
 ## Slide 10 — Tempo e speedup (2 min)
 
-- Inserir `cenario_*_tempo.png` e `cenario_*_speedup.png` do experimento final.
-- Explicar onde o custo de criar processos ou comunicar supera o ganho.
-- Não confundir ganho do kernel com speedup paralelo.
+Rodada de [escalabilidade em 500×500](../benchmarks/results/final/escalabilidade/20261121T220221161094Z_06ef00fb/summary.csv), com até 30 gerações e 2% de espalhadores iniciais.
+
+| Versão | Tempo externo mediano | Speedup contra a sequencial | Eficiência |
+| --- | ---: | ---: | ---: |
+| Sequencial otimizada | 0,993 s | 1,00× | — |
+| Paralela com 4 threads | 1,263 s | 0,79× | 20% |
+| Paralela com 4 processos | 0,447 s | 2,22× | 56% |
+| Distribuída com 4 workers locais | 0,543 s | 1,83× | 46% |
 
 ## Slide 11 — Eficiência e escalabilidade (1 min)
 
-- Inserir `cenario_*_eficiencia.png`.
-- Eficiência = speedup / workers.
-- Queda de eficiência indica overhead, barreira, GIL, comunicação ou limite de núcleos.
+- Usar o [gráfico de speedup contra a sequencial](../benchmarks/results/final/escalabilidade/20261121T220221161094Z_06ef00fb/figures/cenario_001_speedup_sequencial.png). Entre as quantidades testadas, a paralela com processos teve o menor tempo com 4 workers. A distribuída passou de 1,83× com 4 para 1,91× com 8.
+- Usar o [gráfico das três variações de cenário](../benchmarks/results/final/comparacao_cenarios.png) para comparar os backends com 4 workers. A distribuída atingiu 0,86× em 200×200 e 1,66× em 350×350. Com a matriz 400×400, passou de 0,61× com limite de 10 gerações para 2,13× com limite de 60. Na rodada de espalhadores, foi de 1,23× com 1% inicial para 1,69× com 5%.
+- Cada painel usa sua própria rodada pareada com a sequencial. Em 500×500, o speedup de 1,43× na série de tamanhos e o de 1,83× na série de escalabilidade vieram de medições separadas.
+- A [rodada dedicada da distribuída em 1000×1000](../benchmarks/results/distribuida/20261122T182823334195Z_08c558aa/summary.csv) complementa a comparação. Com 8 workers locais, o tempo externo mediano foi de 1,186 s, frente a 4,015 s da sequencial otimizada, para um speedup de 3,39×. Essa série inclui sequencial e distribuída.
 
 ## Slide 12 — Comunicação e sincronização (1 min)
 
-- `overhead_s = tempo das gerações − caminho crítico de cálculo`.
-- Comunicação por geração cresce aproximadamente com workers × colunas, não com toda a matriz.
-- Coordenador centralizado é um gargalo possível.
+- Na rodada dedicada de 1000×1000, o servidor encaminhou 180.000 células de borda com 4 workers e 420.000 com 8, ao longo de 30 gerações. Cada fronteira interna exige o envio de uma linha em cada sentido.
+- O overhead mediano durante as gerações foi de 59 ms com 4 workers e 69 ms com 8. É a diferença entre o tempo das gerações e o caminho crítico de cálculo. Inclui coordenação, comunicação e espera na barreira.
+- O coordenador centraliza a troca de halos e só avança quando todos respondem. Medições em loopback descrevem o ambiente local e a parcela de latência de uma rede física permanece sem medição.
 
 ## Slide 13 — Correção e testes (1 min)
 
@@ -117,13 +125,13 @@ Worker 0 [linhas 0..n] <-- halos --> Coordenador <-- halos --> Worker 1 [linhas 
 
 - Executar paralela com threads ou processos.
 - Executar servidor distribuído com dois workers.
-- Mostrar hashes iguais e uma extensão ativada.
+- Mostrar que as contagens finais coincidem. O benchmark verifica também a igualdade da matriz e do histórico completo. O CLI da paralela imprime as contagens.
 - Conclusão: correção preservada; ganho depende do tamanho e do custo de coordenação.
 
 ## Comandos de demonstração
 
 ```powershell
-python src/parallel/fake_news_paralelo.py --backend processos --workers 4 --linhas 100 --colunas 100 --geracoes 10
-python src/distributed/server.py --automaticos --workers 2 --port 0 -l 100 -c 100 -g 10 -p 0.02 -t 2
+python src/parallel/fake_news_paralelo.py --backend threads --workers 2 --linhas 100 --colunas 100 --geracoes 10 --espalhadores 0.02 --limiar 2 --semente 42 --kernel otimizado
+python src/distributed/server.py --automaticos --workers 2 --port 0 -l 100 -c 100 -g 10 -p 0.02 -t 2 -s 42 --kernel otimizado --saida demo-distribuida.json
 python src/distributed/server.py --automaticos --workers 2 --port 0 -l 100 -c 100 -g 10 -p 0.02 -t 2 --bots 0.005 --influenciadores 0.02
 ```

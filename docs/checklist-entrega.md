@@ -1,6 +1,6 @@
 # Checklist final de entrega
 
-Última revisão: 21/11/2026. Prazo informado no enunciado: 23/11/2026 às 23:59.
+Última revisão: 22/11/2026. Prazo informado no enunciado: 23/11/2026 às 23:59.
 
 ## Código e validação
 
@@ -23,8 +23,9 @@
 - [x] Repetições, aquecimento separado e mesma entrada para todas as versões.
 - [x] Medição de tempo, speedup, eficiência e overhead.
 - [x] Registro automático do ambiente experimental quando disponível.
-- [ ] Gerar e versionar os resultados locais finais.
-- [ ] Gerar gráficos e tabela-resumo finais.
+- [x] Reunir resultados locais finais comparando as três versões. São 18 cenários, 715 medições válidas e nenhuma inválida em [resultados finais](../benchmarks/results/final/).
+- [x] Gerar gráficos e tabela-resumo finais, incluindo o [comparativo por tamanho, gerações e espalhadores iniciais](../benchmarks/results/final/comparacao_cenarios.png).
+- [x] Versionar os resultados comparativos recuperados na branch `feat/resultados-benchmark-distribuida`.
 - [ ] Repetir o experimento em outro computador, se o grupo quiser apresentar múltiplos hosts físicos.
 - [ ] Registrar manualmente detalhes da rede caso haja teste entre máquinas.
 
@@ -36,7 +37,7 @@
 - [x] Referências consolidadas.
 - [x] Declaração do uso de IA.
 - [x] Roteiro de slides cobrindo os itens do enunciado.
-- [ ] Análise dos resultados locais finais.
+- [x] Análise dos resultados locais finais no [roteiro da apresentação](apresentacao.md).
 - [ ] Substituir os três campos `[nome]` pelos integrantes reais.
 - [ ] Revisar e confirmar a contribuição individual de cada integrante.
 - [ ] Dividir as falas para que todos participem.
