@@ -26,8 +26,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Sequence
 
-import fake_news_paralelo as paralelo  # coloca src/sequential no sys.path
-from energia import desligar_economia_de_energia
+import fake_news_paralelo as paralelo  # coloca src e src/sequential no sys.path
+from common.energia import desligar_economia_de_energia
+from common.kernels import KERNELS
 from fake_news import (
     ESPALHADOR,
     IGNORANTE,
@@ -36,7 +37,6 @@ from fake_news import (
     criar_grade,
     proxima_geracao,
 )
-from regras import KERNELS
 
 CAMPOS_CSV = [
     "data", "python", "gil", "cpus", "backend", "kernel", "divisao", "pedaco",

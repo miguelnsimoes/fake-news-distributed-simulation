@@ -1,10 +1,51 @@
-"""Versão paralela: blocos de linhas divididos entre threads ou processos.
+"""Versão paralela da simulação de propagação de fake news.
 
-Correção:
-- buffer duplo: a geração g lê a grade g % 2 e escreve na (g + 1) % 2;
-- cada linha de destino tem um único dono (bloco fixo ou pedaço tirado sob lock);
-- uma barreira por geração; cada worker conta as próprias linhas em posição
-  exclusiva, e todos somam as mesmas parcelas para decidir a parada.
+Divisão do trabalho (duas opções)
+    estatica   A matriz é cortada em blocos contíguos de linhas, um por worker
+               (thread ou processo), com tamanhos que diferem em no máximo uma
+               linha. Cada worker calcula sempre o mesmo bloco.
+    dinamica   As linhas são cortadas em pedaços pequenos. A cada geração, cada
+               worker pega o próximo pedaço livre num contador compartilhado
+               (protegido por lock) até os pedaços acabarem. Quem está num
+               núcleo mais rápido calcula mais pedaços, e a barreira não fica
+               esperando por um worker que caiu num núcleo lento.
+
+Por que não há condição de corrida
+    Existem duas grades (buffer duplo). Na geração g todos LEEM a grade
+    g % 2 e ESCREVEM na grade (g + 1) % 2. Ninguém escreve na grade que está
+    sendo lida, e cada linha da grade de destino é escrita por um único
+    worker (na divisão dinâmica, o lock do contador garante que cada pedaço
+    sai para um worker só). As linhas de fronteira vêm da grade de origem,
+    que fica parada durante a geração, então não precisam de lock nem de cópia.
+
+Consistência entre gerações
+    Uma barreira por geração: ninguém começa a geração g + 1 antes de todos
+    terminarem a geração g. O fluxo principal também participa da barreira
+    para registrar as contagens de cada geração. Se um worker falha, a
+    barreira é abortada e ninguém fica preso esperando (sem deadlock).
+
+Contagem e parada sem lock
+    Cada worker conta os estados das linhas que calculou e grava num espaço
+    só dele, separado pela paridade da geração. Depois da barreira, todos
+    somam as mesmas parcelas e chegam à mesma decisão de parar (nenhum
+    espalhador), igual ao laço do código sequencial.
+
+Extensões do modelo (probabilidade, influenciadores, bots)
+    O kernel estendido recebe o número da geração e o índice global da linha.
+    O sorteio de cada célula depende só de (semente, geração, linha, coluna),
+    então o resultado é o mesmo com qualquer número de workers e com
+    qualquer divisão. Os tipos de cada pessoa (comum, influenciador, bot)
+    ficam numa matriz só de leitura, compartilhada por todos.
+
+Backends
+    threads    threading.Thread + threading.Barrier. No CPython padrão o GIL
+               deixa só uma thread executar bytecode Python por vez; o ganho
+               real aparece no build free-threaded (python3.14t).
+    processos  multiprocessing.Process + RawArray (memória compartilhada) +
+               multiprocessing.Barrier. Paralelismo real em qualquer CPython,
+               pagando o custo de criar os processos. No Windows, cada processo
+               desliga o modo de economia de energia (EcoQoS), que não é
+               herdado do pai e jogava os workers em núcleos lentos.
 
 Detalhes e medições em docs/versao-paralela.md.
 """
