@@ -45,15 +45,35 @@ desligado.
 | `--divisao`                                                                      | `estatica`, `dinamica`    | blocos fixos ou pedaços distribuídos sob demanda (ver abaixo)                 |
 | `--pedaco`                                                                       | inteiro ≥ 1               | linhas por pedaço na divisão dinâmica (padrão: cerca de 8 pedaços por worker) |
 | `--linhas`, `--colunas`, `--geracoes`, `--espalhadores`, `--limiar`, `--semente` |                           | mesmos parâmetros do código do professor                                      |
+| `--probabilidade`                                                                | entre 0 e 1               | chance de cada exposição convencer (1 = modelo original)                      |
+| `--influenciadores`, `--peso-influenciador`                                      | fração; inteiro ≥ 1       | parte da população que é influenciadora e quantas exposições ela vale         |
+| `--bots`                                                                         | fração                    | parte da população que é bot: começa espalhando e nunca fica inativa          |
+
+As três últimas linhas são as extensões do modelo (`docs/extensoes-modelo.md`).
+Ficam desligadas por padrão, valem nos dois backends e nas duas divisões e só
+existem em `fake_news_paralelo.py`; a `varredura.py` mede o modelo original,
+porque compara com o código do professor. Exemplo:
+
+```powershell
+python src/parallel/fake_news_paralelo.py --backend processos --workers 4 --divisao dinamica --probabilidade 0.3 --influenciadores 0.02 --bots 0.005
+```
+
+O resultado com as extensões ligadas é o mesmo com qualquer número de workers:
+o sorteio de cada célula depende só de (semente, geração, linha, coluna), e
+`tests/test_extensoes.py` compara a paralela com a sequencial.
 
 ## Arquivos
 
 | Arquivo                 | O que faz                                                                                                                                                                        |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `regras.py`             | Reexporta os kernels, que agora ficam em `src/common/kernels.py` e são usados pelas três versões: a regra aplicada a **uma linha** (recebe as linhas `i-1`, `i`, `i+1` e devolve a nova linha `i`). Não sabe nada de threads. |
 | `fake_news_paralelo.py` | Divide as linhas entre os workers, sincroniza as gerações e junta o resultado. Os dois backends usam o mesmo laço de worker.                                                     |
+| `paralela.py`           | Expõe `simular(config)`, o contrato comum das três versões, usado pelos testes de equivalência e pelos benchmarks do grupo.                                                       |
 | `varredura.py`          | Mede tempos variando o número de workers, calcula speedup, eficiência, desbalanceamento e tempo de sincronização, confere se o resultado é idêntico ao do professor e grava CSV. |
-| `energia.py`            | Reexporta `src/common/energia.py`, que impede que o Windows 11 rebaixe o processo para os núcleos de economia no meio da medição (ver "Achado 2"). Também é chamado pelo servidor e pelos workers da distribuída. |
+
+Os kernels (a regra aplicada a **uma linha**: recebe as linhas `i-1`, `i`,
+`i+1` e devolve a nova linha `i`) ficam em `src/common/kernels.py`, e a
+correção do EcoQoS (ver "Achado 2") em `src/common/energia.py`. As três versões
+usam os mesmos arquivos.
 
 ## Como a matriz é dividida
 
