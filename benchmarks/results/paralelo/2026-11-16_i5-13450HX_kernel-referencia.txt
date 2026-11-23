@@ -1,0 +1,52 @@
+Python 3.14.7 (C:\Users\Pedro\AppData\Local\Python\pythoncore-3.14-64\python.exe) | GIL ativo | 16 CPUs lógicas | Windows-11-10.0.26200-SP0
+
+Economia de energia do Windows (EcoQoS): desligada
+
+Grade 500x500 | até 20 gerações | 2% espalhadores | limiar 2 | 3 repetição(ões)
+
+backend    kernel     divisão   workers gerações(s)  total(s)  speedup eficiência vs prof.  desbal. sinc.(s)  ok
+
+----------------------------------------------------------------------------------------------------------------
+
+processos  referencia estatica        1       3.337     3.442     1.00       100%        -     1.00    0.002 sim
+
+processos  referencia estatica        2       1.678     1.786     1.99        99%        -     1.00    0.003 sim
+
+processos  referencia estatica        4       0.869     0.995     3.84        96%        -     1.03    0.002 sim
+
+processos  referencia estatica        6       0.612     0.744     5.45        91%        -     1.06    0.003 sim
+
+processos  referencia estatica        8       0.616     0.769     5.42        68%        -     1.23    0.004 sim
+
+processos  referencia estatica       10       0.537     0.719     6.21        62%        -     1.20    0.004 sim
+
+processos  referencia estatica       12       0.483     0.679     6.91        58%        -     1.15    0.003 sim
+
+processos  referencia estatica       16       0.406     0.650     8.23        51%        -     1.07    0.014 sim
+
+processos  referencia dinamica        1       3.375     3.481     1.00       100%        -     1.00    0.001 sim
+
+processos  referencia dinamica        2       1.692     1.799     1.99       100%        -     1.00    0.001 sim
+
+processos  referencia dinamica        4       0.899     1.016     3.76        94%        -     1.06    0.003 sim
+
+processos  referencia dinamica        6       0.608     0.732     5.55        92%        -     1.05    0.003 sim
+
+processos  referencia dinamica        8       0.514     0.663     6.57        82%        -     1.04    0.002 sim
+
+processos  referencia dinamica       10       0.477     0.655     7.07        71%        -     1.05    0.004 sim
+
+processos  referencia dinamica       12       0.439     0.644     7.70        64%        -     1.05    0.003 sim
+
+processos  referencia dinamica       16       0.417     0.666     8.10        51%        -     1.06    0.004 sim
+
+speedup = T(1 worker) / T(N); eficiência = speedup / N; vs prof. = T(professor) / T(N);
+
+desbal. = cálculo do worker mais lento / média, geração a geração (1,00 = equilibrado);
+
+sinc. = tempo das gerações - soma do worker mais lento de cada geração (barreiras e coordenação;
+
+com GIL inclui a espera pelo GIL).
+
+48 execuções gravadas em C:\Users\Pedro\AppData\Local\Temp\claude\fcdd05c034f6fbb1\c5d8b1f7-64ec-4aee-8643-d81c58a98d13\scratchpad\final\C_referencia.csv
+

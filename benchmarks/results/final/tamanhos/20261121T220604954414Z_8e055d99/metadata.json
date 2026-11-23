@@ -1,0 +1,61 @@
+{
+  "experimento": "20261121T220604954414Z_8e055d99",
+  "inicio_utc": "2026-11-21T22:06:04.955417+00:00",
+  "python": "3.12.1 (tags/v3.12.1:2305ca5, Dec  7 2023, 22:03:25) [MSC v.1937 64 bit (AMD64)]",
+  "executavel": "C:\\Users\\Miguel\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+  "plataforma": "Windows-11-10.0.26300-SP0",
+  "modelo_cpu": "Intel(R) Core(TM) 5 210H",
+  "cpus_logicas": 12,
+  "memoria_ram_bytes": 16786386944,
+  "gil_ativo": true,
+  "configuracao": {
+    "piloto": false,
+    "linhas": [
+      500
+    ],
+    "colunas": [
+      500
+    ],
+    "geracoes": [
+      30
+    ],
+    "espalhadores": [
+      0.02
+    ],
+    "limiar": [
+      2
+    ],
+    "semente": 42,
+    "workers": [
+      1,
+      4
+    ],
+    "backends": [
+      "threads",
+      "processos",
+      "distribuida"
+    ],
+    "kernel": "otimizado",
+    "probabilidade": [
+      1.0
+    ],
+    "influenciadores": [
+      0.0
+    ],
+    "peso_influenciador": [
+      3
+    ],
+    "bots": [
+      0.0
+    ],
+    "repeticoes": 5,
+    "saida": "benchmarks\\results\\final\\tamanhos"
+  },
+  "kernel": "otimizado",
+  "divisao_paralela": "estatica",
+  "distribuida": "processos locais via TCP (127.0.0.1), workers iniciados pelo coordenador",
+  "overhead_s": "tempo_geracoes_s - caminho_critico_s (sincronização/comunicação)",
+  "escopo_tempo_externo": "Chamada do adaptado, sem cópia defensiva, validação, CSV ou impressão.",
+  "energia": "Executor não altera a política de energia; processos filhos seguem a implementação original.",
+  "ordem": "Aquecimento sequencial primeiro; medições embaralhadas por repetição com semente fixa."
+}
