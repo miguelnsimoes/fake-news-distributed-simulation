@@ -7,13 +7,14 @@ import unittest
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[1]
-for pasta in ("sequential", "parallel"):
+for pasta in ("", "sequential", "parallel"):
     caminho = str(RAIZ / "src" / pasta)
     if caminho not in sys.path:
         sys.path.insert(0, caminho)
 
 import fake_news as professor  # noqa: E402
-import regras  # noqa: E402
+from common import kernels  # noqa: E402
+from common.estados import ESPALHADOR, IGNORANTE, INATIVO  # noqa: E402
 from fake_news_paralelo import (  # noqa: E402
     dividir_linhas,
     simular_paralelo,
@@ -68,20 +69,20 @@ def aplicar_kernel(kernel, grade, limiar):
 
 def kernel_que_falha(acima, linha, abaixo, limiar):
     """Falha só na linha marcada com INATIVO na coluna 0 (um único worker)."""
-    if linha[0] == regras.INATIVO:
+    if linha[0] == INATIVO:
         raise ValueError("falha proposital")
-    return regras.linha_otimizada(acima, linha, abaixo, limiar)
+    return kernels.linha_otimizada(acima, linha, abaixo, limiar)
 
 
 class TestRegras(unittest.TestCase):
     def test_codigos_de_estado_iguais_aos_do_professor(self):
         self.assertEqual(
-            (regras.IGNORANTE, regras.ESPALHADOR, regras.INATIVO),
+            (IGNORANTE, ESPALHADOR, INATIVO),
             (professor.IGNORANTE, professor.ESPALHADOR, professor.INATIVO),
         )
 
     def test_kernels_iguais_a_proxima_geracao_do_professor(self):
-        for nome, kernel in regras.KERNELS.items():
+        for nome, kernel in kernels.KERNELS.items():
             for linhas, colunas in TAMANHOS:
                 grade = grade_aleatoria(linhas, colunas, semente=linhas * 100 + colunas)
                 for limiar in range(10):  # 0 a 9 cobre "sempre" e "nunca" convence
@@ -173,7 +174,7 @@ class TestEquivalenciaThreads(unittest.TestCase):
 
     def test_falha_num_worker_vira_erro_e_nao_trava(self):
         grade = [[professor.IGNORANTE] * 8 for _ in range(16)]
-        grade[7][0] = regras.INATIVO  # só a linha 7 faz o kernel falhar
+        grade[7][0] = INATIVO  # só a linha 7 faz o kernel falhar
         def rodar(divisao, erros):
             try:
                 simular_paralelo(grade, 5, 2, 4, self.backend, kernel_que_falha, divisao)
