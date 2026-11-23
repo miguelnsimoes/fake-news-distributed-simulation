@@ -166,7 +166,7 @@ Preencher estes dados antes de exportar a apresentação final:
 | --- | --- |
 | Miguel | Versão distribuída com sockets TCP. |
 | `[nome]` | Versão sequencial e núcleo comum. |
-| `[nome]` | Versão paralela. |
+| Pedro Lucas da Silva Mota | Versão paralela com threads e processos, kernel otimizado, divisão dinâmica e análise de desempenho da paralela. |
 | `[nome]` | Benchmarks, análise e visualização. |
 
 ## Limitações
