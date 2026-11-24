@@ -160,12 +160,10 @@ fake-news-distributed-simulation/
 
 ## Integrantes e contribuições
 
-Preencher estes dados antes de exportar a apresentação final:
-
 | Integrante | Contribuição principal |
 | --- | --- |
-| Miguel | Versão distribuída com sockets TCP. |
-| `[nome]` | Versão sequencial e núcleo comum. |
+| Miguel Nazario Simoes | Estrutura do repositório e versão distribuída via TCP. |
+| Nathan Victor | Núcleo comum, interface de linha de comando da versão sequencial e testes de equivalência. |
 | Pedro Lucas da Silva Mota | Versão paralela com threads e processos, kernel otimizado, divisão dinâmica e análise de desempenho da paralela. |
 | Daniel Kawata Hara | Benchmarks, análise e visualização: execução dos experimentos, cálculo de speedup e eficiência, gráficos e animação da propagação. |
 | Isadora Costa Baía | Unificação dos kernels e do controle de energia em `src/common`, integração da versão distribuída aos benchmarks e extensões do modelo (probabilidade de convencimento, influenciadores e bots) com testes e documentação. |
